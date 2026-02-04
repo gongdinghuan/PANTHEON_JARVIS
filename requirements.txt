@@ -1,0 +1,43 @@
+# JARVIS 依赖清单
+
+# LLM & Agent
+openai>=1.0.0
+chromadb>=0.4.0
+
+# 语音处理
+openai-whisper
+sounddevice
+numpy
+torch
+torchaudio
+
+# TTS
+edge-tts
+pygame
+
+# 视觉
+pyautogui
+mss
+Pillow
+
+# Web
+duckduckgo-search
+httpx
+beautifulsoup4
+playwright
+
+# 服务器
+fastapi
+uvicorn[standard]
+websockets
+
+# 系统控制
+pywin32; sys_platform == 'win32'
+psutil
+pyperclip
+
+# 工具
+pydantic>=2.0.0
+python-dotenv
+loguru
+rich

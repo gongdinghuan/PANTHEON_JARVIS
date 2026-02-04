@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS AI Assistant</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-title">
+                <h1 class="glitch-text" data-text="JARVIS">JARVIS</h1>
+                <span class="subtitle">Just A Rather Very Intelligent System</span>
+            </div>
+            <div class="header-controls">
+                <div class="globe-container" id="globeContainer">
+                    <canvas id="globeCanvas" width="60" height="60"></canvas>
+                    <div class="connection-status" id="connectionStatus">
+                        <span class="status-dot"></span>
+                        <span class="status-text">已连接</span>
+                    </div>
+                </div>
+                <button class="control-btn" id="settingsBtn" title="设置">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6m-9-9h6m6 0h6"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="chat-section">
+                <div class="chat-header">
+                    <h2>对话</h2>
+                    <button class="clear-btn" id="clearChatBtn">清空</button>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message system-message">
+                        <div class="message-content">
+                            <p>Sir！JARVIS 已就绪。</p>
+                            <span class="message-time">刚刚</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="输入消息..." autocomplete="off">
+                    <button class="send-btn" id="sendBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path>
+                        </svg>
+                    </button>
+                    <button class="voice-btn" id="voiceBtn" title="语音输入">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="background-effects">
+        <div class="hologram-lines"></div>
+        <div class="scan-line"></div>
+    </div>
+
+    <script src="/static/js/marked.min.js"></script>
+    <script src="/static/js/visualizations.js"></script>
+    <script src="/static/js/app.js"></script>
+    
+    <!-- 设置模态框 -->
+    <div class="settings-modal" id="settingsModal" style="display: none;">
+        <div class="settings-overlay"></div>
+        <div class="settings-dialog">
+            <div class="settings-header">
+                <h2>⚙️ LLM 设置</h2>
+                <button class="close-btn" id="closeSettingsBtn">×</button>
+            </div>
+            <div class="settings-body">
+                <div class="setting-group">
+                    <label for="providerSelect">提供商</label>
+                    <select id="providerSelect">
+                        <option value="nvidia">NVIDIA AI</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="ollama">Ollama</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="apiKeyInput">API Key</label>
+                    <input type="password" id="apiKeyInput" placeholder="输入 API Key">
+                </div>
+                
+                <div class="setting-group">
+                    <label for="baseUrlInput">Base URL</label>
+                    <input type="text" id="baseUrlInput" placeholder="https://...">
+                </div>
+                
+                <div class="setting-group">
+                    <label for="modelInput">模型</label>
+                    <input type="text" id="modelInput" placeholder="模型名称">
+                </div>
+                
+                <div class="setting-group">
+                    <label for="temperatureInput">Temperature: <span id="temperatureValue">0.7</span></label>
+                    <input type="range" id="temperatureInput" min="0" max="2" step="0.1" value="0.7">
+                </div>
+                
+                <div class="setting-group">
+                    <label for="maxTokensInput">Max Tokens</label>
+                    <input type="number" id="maxTokensInput" min="1" max="32000" value="8096">
+                </div>
+                
+                <div class="settings-actions">
+                    <button class="btn-test" id="testBtn">测试连接</button>
+                    <button class="btn-save" id="saveConfigBtn">保存配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 确认对话框 -->
+    <div class="confirmation-modal" id="confirmationModal" style="display: none;">
+        <div class="confirmation-overlay"></div>
+        <div class="confirmation-dialog">
+            <div class="confirmation-header">
+                <div class="confirmation-icon">⚠️</div>
+                <h2>需要确认</h2>
+            </div>
+            <div class="confirmation-body">
+                <div class="confirmation-message" id="confirmationMessage"></div>
+                <div class="confirmation-details" id="confirmationDetails"></div>
+                <div class="confirmation-timer" id="confirmationTimer">
+                    <div class="timer-circle">
+                        <svg width="60" height="60">
+                            <circle
+                                cx="30"
+                                cy="30"
+                                r="26"
+                                fill="none"
+                                stroke="rgba(0, 212, 255, 0.2)"
+                                stroke-width="4"
+                            />
+                            <circle
+                                id="timerProgress"
+                                cx="30"
+                                cy="30"
+                                r="26"
+                                fill="none"
+                                stroke="#00d4ff"
+                                stroke-width="4"
+                                stroke-dasharray="163.36"
+                                stroke-dashoffset="0"
+                                transform="rotate(-90 30 30)"
+                            />
+                        </svg>
+                        <div class="timer-text" id="timerText">30</div>
+                    </div>
+                    <p>秒后自动拒绝</p>
+                </div>
+            </div>
+            <div class="confirmation-footer">
+                <button class="btn-reject" id="btnReject">
+                    <span class="btn-icon">✕</span>
+                    拒绝
+                </button>
+                <button class="btn-confirm" id="btnConfirm">
+                    <span class="btn-icon">✓</span>
+                    确认
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
