@@ -88,8 +88,13 @@ body {
 }
 
 @keyframes globeRotate {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .connection-status {
@@ -222,6 +227,7 @@ body {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -275,9 +281,12 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.5;
     }
@@ -523,9 +532,13 @@ body {
 }
 
 @keyframes bounce {
-    0%, 80%, 100% {
+
+    0%,
+    80%,
+    100% {
         transform: scale(0);
     }
+
     40% {
         transform: scale(1);
     }
@@ -672,9 +685,12 @@ body {
 }
 
 @keyframes heartbeat {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(1.1);
     }
@@ -897,13 +913,11 @@ body {
     position: absolute;
     width: 100%;
     height: 100%;
-    background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 212, 255, 0.03) 2px,
-        rgba(0, 212, 255, 0.03) 4px
-    );
+    background: repeating-linear-gradient(0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 212, 255, 0.03) 2px,
+            rgba(0, 212, 255, 0.03) 4px);
     animation: hologramMove 20s linear infinite;
 }
 
@@ -911,6 +925,7 @@ body {
     0% {
         transform: translateY(0);
     }
+
     100% {
         transform: translateY(100px);
     }
@@ -920,12 +935,10 @@ body {
     position: absolute;
     width: 100%;
     height: 2px;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        var(--primary-color),
-        transparent
-    );
+    background: linear-gradient(90deg,
+            transparent,
+            var(--primary-color),
+            transparent);
     animation: scan 4s linear infinite;
     opacity: 0.3;
 }
@@ -934,6 +947,7 @@ body {
     0% {
         top: 0;
     }
+
     100% {
         top: 100%;
     }
@@ -954,11 +968,11 @@ body {
     .main-content {
         grid-template-columns: 1fr;
     }
-    
+
     .header-title h1 {
         font-size: 1.5rem;
     }
-    
+
     .message-content {
         max-width: 90%;
     }
@@ -1004,6 +1018,7 @@ body {
         opacity: 0;
         transform: scale(0.9) translateY(-20px);
     }
+
     to {
         opacity: 1;
         transform: scale(1) translateY(0);
@@ -1025,9 +1040,12 @@ body {
 }
 
 @keyframes warningPulse {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(1.1);
     }
@@ -1149,24 +1167,24 @@ body {
         width: 95%;
         max-width: none;
     }
-    
+
     .confirmation-header {
         padding: 1rem 1.5rem;
     }
-    
+
     .confirmation-header h2 {
         font-size: 1.2rem;
     }
-    
+
     .confirmation-body {
         padding: 1.5rem;
     }
-    
+
     .confirmation-footer {
         padding: 1rem 1.5rem;
         flex-direction: column;
     }
-    
+
     .btn-confirm,
     .btn-reject {
         width: 100%;
@@ -1368,20 +1386,232 @@ body {
         width: 95%;
         max-width: none;
     }
-    
+
     .settings-header {
         padding: 1rem;
     }
-    
+
     .settings-header h2 {
         font-size: 1.2rem;
     }
-    
+
     .settings-body {
         padding: 1rem;
     }
-    
+
     .settings-actions {
         flex-direction: column;
     }
+}
+
+/* 文件附件卡片 */
+.attachment-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    margin-top: 1rem;
+    background: rgba(0, 212, 255, 0.05);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.attachment-card:hover {
+    background: rgba(0, 212, 255, 0.1);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+}
+
+.attachment-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.attachment-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.attachment-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attachment-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.attachment-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.btn-preview,
+.btn-download {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+}
+
+.btn-preview {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-preview:hover {
+    background: rgba(0, 212, 255, 0.3);
+}
+
+.btn-download {
+    background: rgba(0, 255, 136, 0.1);
+    border: 1px solid var(--success-color);
+    color: var(--success-color);
+}
+
+.btn-download:hover {
+    background: rgba(0, 255, 136, 0.3);
+}
+
+/* 报告预览模态框 */
+.report-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 2rem;
+    backdrop-filter: blur(5px);
+}
+
+.report-modal {
+    background: var(--bg-medium);
+    border: 1px solid var(--primary-color);
+    border-radius: 15px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+}
+
+.report-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+    background: rgba(0, 212, 255, 0.05);
+    border-radius: 15px 15px 0 0;
+}
+
+.report-modal-header h2 {
+    color: var(--primary-color);
+    font-size: 1.2rem;
+    margin: 0;
+}
+
+.report-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: color 0.3s;
+}
+
+.report-modal-close:hover {
+    color: var(--error-color);
+}
+
+.report-modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    line-height: 1.8;
+}
+
+.report-modal-content pre {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.report-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid rgba(0, 212, 255, 0.3);
+    text-align: center;
+}
+
+.btn-download-full {
+    display: inline-block;
+    padding: 0.8rem 2rem;
+    background: rgba(0, 255, 136, 0.1);
+    border: 1px solid var(--success-color);
+    color: var(--success-color);
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-download-full:hover {
+    background: rgba(0, 255, 136, 0.3);
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+}
+
+/* HTML 报告 iframe */
+.report-iframe {
+    width: 100%;
+    height: 60vh;
+    border: none;
+    border-radius: 8px;
+    background: #fff;
+}
+
+/* 新标签页按钮 */
+.btn-newtab {
+    display: inline-block;
+    padding: 0.8rem 2rem;
+    margin-right: 1rem;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-newtab:hover {
+    background: rgba(0, 212, 255, 0.3);
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+.report-modal-footer {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
 }

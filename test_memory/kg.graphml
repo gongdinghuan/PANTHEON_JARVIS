@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d0" for="edge" attr.name="relation" attr.type="string"/>
+<graph edgedefault="directed"><node id="Project Apollo"/>
+<node id="Python 3.9"/>
+<node id="User"/>
+<edge source="Project Apollo" target="Python 3.9">
+  <data key="d0">uses_language</data>
+</edge>
+<edge source="User" target="Project Apollo">
+  <data key="d0">owner_of</data>
+</edge>
+</graph></graphml>
