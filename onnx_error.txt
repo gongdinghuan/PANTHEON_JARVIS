@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Program Files\Python311\Lib\site-packages\onnxruntime\__init__.py", line 74, in <module>
+    raise import_capi_exception
+  File "C:\Program Files\Python311\Lib\site-packages\onnxruntime\__init__.py", line 24, in <module>
+    from onnxruntime.capi._pybind_state import (
+  File "C:\Program Files\Python311\Lib\site-packages\onnxruntime\capi\_pybind_state.py", line 32, in <module>
+    from .onnxruntime_pybind11_state import *  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ImportError: DLL load failed while importing onnxruntime_pybind11_state: 找不到指定的模块。

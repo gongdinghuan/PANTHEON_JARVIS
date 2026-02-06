@@ -31,7 +31,9 @@ class LLMProvider(Enum):
     OPENAI = "openai"
     DEEPSEEK = "deepseek"
     OLLAMA = "ollama"
+
     NVIDIA = "nvidia"
+    ZHIPU = "zhipu"
 
 
 class SearchProvider(Enum):
@@ -46,6 +48,9 @@ class PermissionLevel(Enum):
     READ_ONLY = 1      # 只读操作，自动执行
     SAFE_WRITE = 2     # 安全写入，自动执行但记录日志
     CRITICAL = 3       # 危险操作，必须人工确认
+
+
+
 
 
 @dataclass
@@ -72,11 +77,16 @@ class LLMConfig:
     nvidia_base_url: str = field(default_factory=lambda: os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"))
     nvidia_model: str = field(default_factory=lambda: os.getenv("NVIDIA_MODEL", "minimaxai/minimax-m2.1"))
     
+    # Zhipu AI (BigModel) 配置
+    zhipu_api_key: str = field(default_factory=lambda: os.getenv("ZHIPU_API_KEY", ""))
+    zhipu_base_url: str = field(default_factory=lambda: os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"))
+    zhipu_model: str = field(default_factory=lambda: os.getenv("ZHIPU_MODEL", "glm-4"))
+    
     # 通用配置
     temperature: float = 0.7
     max_tokens: int = 8096
     stream: bool = True
-    request_timeout: float = 30.0
+    request_timeout: float = 120.0  # 增加超时时间，复杂请求需要更长时间
 
 
 @dataclass
@@ -242,6 +252,12 @@ class MemoryConfig:
     # ChromaDB 存储路径
     chroma_persist_dir: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory"))
     
+    # Holo-Mem L3: 知识图谱路径
+    graph_storage_path: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory" / "kg_graph.graphml"))
+    
+    # Holo-Mem L2: 时间线摘要存储目录
+    timeline_storage_dir: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory" / "timeline"))
+
     # 短期记忆保留的对话轮数
     short_term_turns: int = 20
     
@@ -255,8 +271,10 @@ class MemoryConfig:
 @dataclass
 class ServerConfig:
     """服务器配置"""
-    host: str = "127.0.0.1"
-    port: int = 8765
+    host: str = field(default_factory=lambda: os.getenv("SERVER_HOST", "0.0.0.0"))
+    port: int = field(default_factory=lambda: int(os.getenv("SERVER_PORT", "8765")))
+    # 公网 IP 用于前端链接生成
+    public_host: str = field(default_factory=lambda: os.getenv("PUBLIC_HOST", "43.135.129.25"))
     cors_origins: List[str] = field(default_factory=lambda: ["*"])
     enabled: bool = False  # 是否在 Web 模式下运行
 
@@ -305,6 +323,16 @@ class HeartbeatConfig:
     enable_greeting: bool = True
 
 
+
+@dataclass
+class LongPortConfig:
+    """LongPort 配置"""
+    app_key: str = field(default_factory=lambda: os.getenv("LONGPORT_APP_KEY", ""))
+    app_secret: str = field(default_factory=lambda: os.getenv("LONGPORT_APP_SECRET", ""))
+    access_token: str = field(default_factory=lambda: os.getenv("LONGPORT_ACCESS_TOKEN", ""))
+    enabled: bool = field(default_factory=lambda: bool(os.getenv("LONGPORT_APP_KEY")))
+
+
 @dataclass
 class JarvisConfig:
     """JARVIS 总配置"""
@@ -316,6 +344,7 @@ class JarvisConfig:
     iot: IoTConfig = field(default_factory=IoTConfig)
     web: WebConfig = field(default_factory=WebConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
+    longport: LongPortConfig = field(default_factory=LongPortConfig)
     
     # 日志配置
     log_level: str = "INFO"

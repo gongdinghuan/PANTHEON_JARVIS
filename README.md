@@ -2,15 +2,27 @@
 
 一个类似钢铁侠 J.A.R.V.I.S. 的智能 AI 助手，基于 Python 实现。
 
-## 功能特性
+## 核心特性 (v2.0)
 
-- 🧠 **智能对话**: 基于大语言模型的自然语言理解
-- 🎯 **任务执行**: ReAct 工作流，自动规划和执行任务
-- 🖥️ **系统控制**: 打开应用、调节音量、键鼠操作
-- 📁 **文件管理**: 读写、移动、删除文件
-- 🌐 **网页浏览**: 搜索信息、读取网页
-- 🔊 **语音交互**: 语音识别和语音合成
-- 🔒 **安全机制**: 权限分级和危险操作确认
+### 🧠 Holo-Mem 仿生记忆
+- **L3 语义图谱**: 基于 NetworkX 构建实体关系网络，解决跨上下文关联问题。
+- **L2 记忆固化**: "Nightly Consolidation" 机制，每日自动生成 Markdown 摘要并提取知识三元组。
+- **混合检索**: 结合向量相似度 (ChromaDB) 与图谱关联度 (Graph) 的双重检索。
+
+### 🧬 自我进化引擎
+- **经验学习**:自动记录成功/失败的操作路径，形成"经验向量"。
+- **主动预测**: 在执行任务前参考过往类似经验，优化工具选择。
+- **自我反思**: 任务失败时进行 Reflexion，自我修正错误。
+
+### 💻 现代化交互
+- **Web UI**: 基于 FastAPI + WebSocket 的现代化界面，支持 ECharts 图表渲染。
+- **后台任务**: 支持长耗时任务的异步执行与状态推送。
+- **多用户支持**: 基于 IP/Session 的用户上下文隔离。
+
+### 🛠️ 增强技能库
+- **金融分析**: 集成 **LongPort SDK**，支持实时行情、K线图绘制与市场分析。
+- **智能调度**: 支持自然语言创建定时任务 ("每天早上8点叫我")，支持内存级函数调度。
+- **原有能力**: 系统控制、文件管理、网页浏览、代码解释器等。
 
 ## 快速开始
 
@@ -85,33 +97,40 @@ JARVIS: 为您搜索到以下结果：
 | `/clear` | 清空对话记忆 |
 | `/status` | 显示系统状态 |
 | `/skills` | 显示可用技能 |
+| `/tasks` | 显示后台任务列表 |
+| `/cancel <id>` | 取消指定任务 |
+| `/evolution` | 查看自我进化统计 |
+| `/optimize` | 查看系统优化建议 |
+| `/voice <name>` | 切换 TTS 语音 |
 | `exit` | 退出程序 |
 
 ## 项目结构
 
 ```
 JARVIS/
-├── main.py              # 主入口
-├── config.py            # 配置管理
-├── cognitive/           # 中枢层（大脑）
-│   ├── llm_brain.py     # LLM 接口
-│   ├── memory.py        # 记忆系统
-│   ├── context_manager.py # 上下文管理
-│   └── planner.py       # ReAct 规划器
-├── senses/              # 感官层
-│   ├── ears.py          # 语音识别
-│   └── eyes.py          # 视觉/截图
-├── skills/              # 技能层
-│   ├── system_control.py # 系统控制
-│   ├── file_manager.py  # 文件管理
-│   ├── web_browser.py   # 网页浏览
-│   ├── terminal.py      # 终端命令
-│   └── iot_bridge.py    # IoT 控制
-├── expression/          # 表达层
-│   └── tts.py           # 语音合成
-└── security/            # 安全层
-    ├── permission.py    # 权限管理
-    └── confirmation.py  # 确认机制
+├── main.py                   # 主入口 (CLI/Voice/Web)
+├── config.py                 # 全局配置
+├── cognitive/                # 中枢层 (Brain)
+│   ├── llm_brain.py          # LLM 统一接口
+│   ├── memory.py             # Memory 2.0 (Vector+Graph)
+│   ├── graph_storage.py      # L3 语义图谱存储 [NEW]
+│   ├── planner.py            # ReAct 规划器 (带经验注入)
+│   ├── self_evolution.py     # 进化引擎 (经验学习)
+│   ├── continuous_evolution.py # 持续进化引擎 (后台学习)
+│   └── heartbeat.py          # 心跳引擎 (Time-aware)
+├── skills/                   # 技能层 (Skills)
+│   ├── system_control.py     # 系统控制
+│   ├── file_manager.py       # 文件管理
+│   ├── web_browser.py        # 网页浏览
+│   ├── scheduler.py          # 智能调度 (升级版)
+│   ├── longport_skill.py     # 金融分析 (LongPort) [NEW]
+│   ├── code_interpreter.py   # 代码解释器
+│   └── image_generation.py   # 图像生成
+├── static/                   # Web 资源
+│   ├── js/                   # ECharts & App Logic
+│   └── css/                  # Styles
+└── security/                 # 安全层
+    └── confirmation.py       # 危险操作拦截
 ```
 
 ## 安全说明

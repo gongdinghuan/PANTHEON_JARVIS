@@ -12,8 +12,11 @@ Author: gngdingghuan
 import asyncio
 import sys
 import warnings
+import functools
+import logging
 from pathlib import Path
 from datetime import datetime
+from typing import Any
 
 # 抑制第三方库的警告
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pygame")
@@ -45,6 +48,12 @@ from skills.terminal import TerminalSkill
 from skills.scheduler import SchedulerSkill
 from skills.iot_bridge import IoTBridgeSkill
 from skills.background_task import BackgroundTaskSkill
+from skills.calculator import CalculatorSkill
+from skills.financial_analyst import FinancialAnalystSkill
+from skills.longport_skill import LongPortSkill
+from skills.code_interpreter import CodeInterpreterSkill
+from skills.email_skill import EmailSkill
+from skills.image_generation import ImageGenerationSkill
 from expression.tts import TTS
 from security.confirmation import get_confirmation_handler
 
@@ -107,6 +116,12 @@ class Jarvis:
             evolution_engine=self.evolution_engine
         )
         
+        # 注入 Planner 到 Scheduler (使其能够执行自然语言指令)
+        if "scheduler" in self.skills:
+            self.skills["scheduler"].set_planner(self.planner)
+            self.scheduler = self.skills["scheduler"] # 便捷访问别名
+        
+        
         # 表达层
         self.tts = TTS()
         
@@ -119,7 +134,39 @@ class Jarvis:
         # 传递系统信息和时间信息给大脑中枢
         self._inform_brain_system_info()
         
-        console.print("[green][OK] JARVIS 初始化完成[/green]")
+        console.print("[green][OK] JARVIS 初始化完成 (组件已就绪)[/green]")
+    
+    async def initialize(self):
+        """
+        异步初始化 (执行耗时操作，如记忆恢复)
+        """
+        console.print("[dim]正在恢复记忆...[/dim]")
+        try:
+            # 使用全量摘要模式恢复记忆
+            await self.memory.restore_with_summary(self.brain.simple_chat)
+            
+            # [Holo-Mem] 注册每日记忆固化任务 (03:00 AM)
+            # 使用 functools.partial 绑定必要的参数
+            consolidate_task = functools.partial(
+                self.memory.nightly_consolidate,
+                summarizer_func=self.brain.generate_summary, 
+                extractor_func=self.brain.extract_triplets
+            )
+            
+            # 注册为每日定时任务
+            await self.scheduler.register_task(
+                name="每日记忆固化 (Holo-Mem)",
+                command=consolidate_task, # 支持直接传递 callable
+                schedule_type="daily",
+                time_str="03:00",
+                description="将短期记忆转化为长期摘要与图谱",
+                execution_mode="function" # 标记为直接函数执行
+            )
+            
+        except Exception as e:
+            log.warning(f"记忆恢复或任务调度失败: {e}")
+            
+        console.print("[green][OK] 记忆恢复与调度完成[/green]")
     
     async def cleanup(self):
         """清理资源"""
@@ -180,10 +227,35 @@ class Jarvis:
         background_skill = BackgroundTaskSkill()
         skills["background_task"] = background_skill
         
+        # 计算器
+        calc_skill = CalculatorSkill()
+        skills["calculator"] = calc_skill
+        
+        # 金融分析
+        finance_skill = FinancialAnalystSkill()
+        skills["financial_analyst"] = finance_skill
+        
         # IoT 控制（如果配置了）
         if self.config.iot.enabled:
             iot_skill = IoTBridgeSkill()
             skills["iot_bridge"] = iot_skill
+            
+        # LongPort 股票搜索
+        if self.config.longport.enabled:
+            longport_skill = LongPortSkill()
+            skills["longport_skill"] = longport_skill
+        
+        # 代码解释器
+        code_interpreter = CodeInterpreterSkill()
+        skills["code_interpreter"] = code_interpreter
+        
+        # 邮件发送
+        email_skill = EmailSkill()
+        skills["email"] = email_skill
+        
+        # 图像生成
+        image_gen = ImageGenerationSkill()
+        skills["image_generation"] = image_gen
         
         console.print(f"[dim]已加载 {len(skills)} 个技能[/dim]")
         
@@ -241,12 +313,13 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
         except Exception as e:
             log.error(f"进化反馈处理失败: {e}")
     
-    async def process(self, user_input: str) -> str:
+    async def process(self, user_input: str, user_id: str = "default") -> Any:
         """
         处理用户输入
         
         Args:
             user_input: 用户输入文本
+            user_id: 用户标识 (IP 地址)
             
         Returns:
             AI 回复
@@ -254,6 +327,9 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
         import time
         start_time = time.time()
         
+        # 记录用户来源
+        log.debug(f"处理请求 - 用户: {user_id}")
+
         # 记录活动
         self.heartbeat.record_activity()
         
@@ -261,7 +337,20 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
         self.context.set_current_task(user_input[:50])
         
         # 使用规划器处理
-        response = await self.planner.plan_and_execute(user_input)
+        plan_result = await self.planner.plan_and_execute(user_input)
+        
+        # 处理返回结果
+        if isinstance(plan_result, dict) and "content" in plan_result:
+            response = plan_result["content"]
+            visualizations = plan_result.get("visualizations", [])
+            # 把可视化数据附加到返回对象中，如果是 Web 模式，server.py 会处理
+            # 这里为了保持 process 返回 str 的签名兼容性，我们可能需要返回一个特殊结构
+            # 或者修改 process 签名。为了兼容性，我们返回 Dict 但这就打破了类型提示
+            # 让我们直接返回 plan_result，修改 process 签名为 Any
+            response_data = plan_result
+        else:
+            response = plan_result
+            response_data = plan_result
         
         # 清除当前任务
         self.context.clear_current_task()
@@ -276,12 +365,12 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
                 tools_used=self.planner._last_used_tools or [],
                 success=True,
                 execution_time=execution_time,
-                context={"timestamp": datetime.now().isoformat()}
+                context=self.context.get_system_state() if hasattr(self.context, 'get_system_state') else {}
             )
         except Exception as e:
             log.warning(f"记录进化经验失败: {e}")
         
-        return response
+        return response_data
     
     def _classify_task(self, user_input: str) -> str:
         """分类任务类型"""
@@ -692,7 +781,7 @@ async def main():
     parser = argparse.ArgumentParser(description='JARVIS AI Assistant')
     parser.add_argument('--voice', action='store_true', help='启用语音交互模式')
     parser.add_argument('--web', action='store_true', help='启用 Web UI 模式')
-    parser.add_argument('--provider', choices=['openai', 'deepseek', 'ollama'], 
+    parser.add_argument('--provider', choices=['openai', 'deepseek', 'ollama','zhipu'], 
                        help='LLM 提供商')
     args = parser.parse_args()
     
@@ -705,31 +794,14 @@ async def main():
     # 创建 JARVIS 实例
     jarvis = Jarvis()
     
+    # 初始化 (恢复记忆等)
+    await jarvis.initialize()
+
     # 运行
     if args.web:
-        console.print("[cyan]启动 JARVIS Web UI...[/cyan]")
-        console.print(f"[dim]访问地址: http://{get_config().server.host}:{get_config().server.port}[/dim]")
-        console.print("[dim]提示: Web UI 模式会启动一个新的 Web 服务器进程[/dim]")
-        
-        # 启动心跳引擎
-        if jarvis.config.heartbeat.enabled:
-            jarvis.heartbeat.start()
-        
-        # 启动持续进化（后台学习）
-        await jarvis.continuous_evolution.start()
-        
-        # 导入服务器设置 JARVIS 实例
-        from server import set_jarvis_instance, app
-        set_jarvis_instance(jarvis)
-        
-        # 使用 uvicorn 直接运行（不使用 asyncio.run）
-        import uvicorn
-        uvicorn.run(
-            app,
-            host=get_config().server.host,
-            port=get_config().server.port,
-            log_level="info"
-        )
+        # CLI 模式下不应该进入这里，因为 --web 会被 __main__ 拦截
+        # 但为了兼容性保留
+        pass
     elif args.voice:
         await jarvis.run_voice()
     else:
@@ -755,7 +827,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description='JARVIS AI Assistant')
         parser.add_argument('--voice', action='store_true', help='启用语音交互模式')
         parser.add_argument('--web', action='store_true', help='启用 Web UI 模式')
-        parser.add_argument('--provider', choices=['openai', 'deepseek', 'ollama'], 
+        parser.add_argument('--provider', choices=['openai', 'deepseek', 'ollama', 'zhipu'], 
                            help='LLM 提供商')
         args = parser.parse_args()
         
@@ -781,6 +853,9 @@ if __name__ == "__main__":
         
         # 配置启动事件来启动心跳
         async def startup():
+            # 初始化 (恢复记忆等)
+            await jarvis.initialize()
+            
             if jarvis.config.heartbeat.enabled:
                 jarvis.heartbeat.start()
         

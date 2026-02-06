@@ -40,4 +40,10 @@ pyperclip
 pydantic>=2.0.0
 python-dotenv
 loguru
+
+# 金融分析
+longport
+googlesearch-python
+
+# 终端美化
 rich

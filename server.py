@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_config
 from utils.logger import log
+from cognitive.session_manager import get_session_manager, UserSessionManager
 
 # 创建 FastAPI 应用
 app = FastAPI(title="JARVIS AI Assistant", version="1.0.0")
@@ -38,6 +39,11 @@ app.add_middleware(
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# 挂载报告目录
+reports_dir = Path(__file__).parent / "reports"
+reports_dir.mkdir(exist_ok=True)
+app.mount("/reports", StaticFiles(directory=str(reports_dir)), name="reports")
 
 # 全局 JARVIS 实例（将在 main.py 中设置）
 jarvis_instance = None
@@ -134,6 +140,76 @@ async def get_heartbeat():
     except Exception as e:
         log.error(f"获取心跳状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sessions")
+async def get_sessions():
+    """获取所有用户会话状态"""
+    session_manager = get_session_manager()
+    return {
+        "sessions": session_manager.get_all_sessions(),
+        "online_users": session_manager.get_online_users(),
+        "total_sessions": len(session_manager._sessions)
+    }
+
+
+@app.get("/api/reports")
+async def list_reports(limit: int = 20):
+    """获取报告列表"""
+    from utils.report_manager import get_report_manager
+    manager = get_report_manager()
+    reports = manager.list_reports(limit=limit)
+    return {
+        "reports": [manager.create_attachment_info(r) for r in reports],
+        "total": len(reports)
+    }
+
+
+@app.get("/api/reports/{report_id}/download")
+async def download_report(report_id: str):
+    """下载报告文件"""
+    from utils.report_manager import get_report_manager
+    from pathlib import Path
+    
+    manager = get_report_manager()
+    meta = manager.get_report(report_id)
+    
+    if not meta:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    file_path = Path(meta.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=meta.file_name,
+        media_type="application/octet-stream"
+    )
+
+
+@app.get("/api/reports/{report_id}/preview")
+async def preview_report(report_id: str):
+    """预览报告内容"""
+    from utils.report_manager import get_report_manager
+    
+    manager = get_report_manager()
+    meta = manager.get_report(report_id)
+    
+    if not meta:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    content = manager.get_report_content(report_id)
+    if content is None:
+        raise HTTPException(status_code=404, detail="无法读取文件内容")
+    
+    return {
+        "id": meta.id,
+        "title": meta.title,
+        "file_type": meta.file_type,
+        "content": content,
+        "created_at": meta.created_at
+    }
 
 
 @app.get("/api/skills")
@@ -409,9 +485,18 @@ async def shutdown_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket 端点 - 实时通信"""
+    """WebSocket 端点 - 实时通信 (支持多用户)"""
     await websocket.accept()
-    log.info("WebSocket 连接已建立")
+    
+    # 获取客户端 IP
+    client_host = websocket.client.host if websocket.client else "unknown"
+    user_id = client_host
+    
+    log.info(f"WebSocket 连接已建立: 用户 {user_id}")
+    
+    # 获取会话管理器并连接用户
+    session_manager = get_session_manager()
+    session = await session_manager.connect_user(user_id, websocket)
     
     # 将 WebSocket 连接设置到 ConfirmationHandler
     if jarvis_instance:
@@ -421,9 +506,19 @@ async def websocket_endpoint(websocket: WebSocket):
         # 发送欢迎消息
         await websocket.send_json({
             "type": "system",
-            "message": "已连接到 JARVIS",
+            "message": f"已连接到 JARVIS",
+            "user_id": user_id,
             "timestamp": datetime.now().isoformat(),
         })
+        
+        # 推送待推送的结果 (重连场景)
+        pending_count = await session_manager.deliver_pending_results(user_id)
+        if pending_count > 0:
+            await websocket.send_json({
+                "type": "system",
+                "message": f"您有 {pending_count} 个离线完成的任务结果",
+                "timestamp": datetime.now().isoformat(),
+            })
         
         # 接收消息循环
         while True:
@@ -434,11 +529,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 message = data.get("message", "")
                 if message and jarvis_instance:
                     try:
-                        response = await jarvis_instance.process(message)
+                        # 记录用户消息到会话
+                        session.add_message("user", message)
+                        session.touch()
+                        
+                        # 处理消息 (传入 user_id)
+                        response = await jarvis_instance.process(message, user_id=user_id)
+                        
+                        # 记录助手回复
+                        if isinstance(response, dict):
+                            session.add_message("assistant", str(response.get("output", response)))
+                        else:
+                            session.add_message("assistant", str(response))
+                        
                         await websocket.send_json({
                             "type": "chat",
                             "message": message,
                             "response": response,
+                            "user_id": user_id,
                             "timestamp": datetime.now().isoformat(),
                         })
                     except Exception as e:
@@ -470,6 +578,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 if jarvis_instance:
                     try:
                         status = await get_status()
+                        # 添加用户会话信息
+                        status["session"] = {
+                            "user_id": user_id,
+                            "is_online": True,
+                            "pending_tasks": len(session.pending_tasks),
+                            "online_users": len(session_manager.get_online_users())
+                        }
                         await websocket.send_json({
                             "type": "status",
                             "status": status,
@@ -521,9 +636,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         })
     
     except WebSocketDisconnect:
-        log.info("WebSocket 连接已断开")
+        log.info(f"WebSocket 连接已断开: 用户 {user_id} (会话保留)")
+        await session_manager.disconnect_user(user_id)
     except Exception as e:
-        log.error(f"WebSocket 错误: {e}")
+        error_msg = str(e)
+        # 忽略 close 相关的错误
+        if "close message" not in error_msg.lower():
+            log.error(f"WebSocket 错误: {e}")
+        await session_manager.disconnect_user(user_id)
         try:
             await websocket.close()
         except:

@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "main.py", line 32, in <module>
+    from cognitive.llm_brain import LLMBrain
+  File ".\cognitive\__init__.py", line 8, in <module>
+    from cognitive.memory import MemoryManager
+  File ".\cognitive\memory.py", line 15, in <module>
+    import chromadb
+  File "C:\Program Files\python\lib\site-packages\chromadb\__init__.py", line 86, in <module>
+    raise RuntimeError(
+RuntimeError: [91mYour system has an unsupported version of sqlite3. Chroma                     requires sqlite3 >= 3.35.0.[0m
+[94mPlease visit                     https://docs.trychroma.com/troubleshooting#sqlite to learn how                     to upgrade.[0m

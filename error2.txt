@@ -1,0 +1,28 @@
+Traceback (most recent call last):
+  File "main.py", line 33, in <module>
+    from cognitive.llm_brain import LLMBrain
+  File ".\cognitive\__init__.py", line 8, in <module>
+    from cognitive.memory import MemoryManager
+  File ".\cognitive\memory.py", line 15, in <module>
+    import chromadb
+  File "C:\Program Files\python\lib\site-packages\chromadb\__init__.py", line 6, in <module>
+    from chromadb.auth.token_authn import TokenTransportHeader
+  File "C:\Program Files\python\lib\site-packages\chromadb\auth\token_authn\__init__.py", line 24, in <module>
+    from chromadb.telemetry.opentelemetry import (
+  File "C:\Program Files\python\lib\site-packages\chromadb\telemetry\opentelemetry\__init__.py", line 13, in <module>
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+  File "C:\Program Files\python\lib\site-packages\opentelemetry\exporter\otlp\proto\grpc\trace_exporter\__init__.py", line 25, in <module>
+    from opentelemetry.exporter.otlp.proto.grpc.exporter import (  # noqa: F401
+  File "C:\Program Files\python\lib\site-packages\opentelemetry\exporter\otlp\proto\grpc\exporter.py", line 38, in <module>
+    from google.rpc.error_details_pb2 import RetryInfo
+  File "C:\Program Files\python\lib\site-packages\google\rpc\error_details_pb2.py", line 50, in <module>
+    _descriptor.FieldDescriptor(
+  File "C:\Program Files\python\lib\site-packages\google\protobuf\descriptor.py", line 621, in __new__
+    _message.Message._CheckCalledFromGeneratedFile()
+TypeError: Descriptors cannot be created directly.
+If this call came from a _pb2.py file, your generated code is out of date and must be regenerated with protoc >= 3.19.0.
+If you cannot immediately regenerate your protos, some other possible workarounds are:
+ 1. Downgrade the protobuf package to 3.20.x or lower.
+ 2. Set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python (but this will use pure-Python parsing and will be much slower).
+
+More information: https://developers.google.com/protocol-buffers/docs/news/2022-05-06#python-updates
