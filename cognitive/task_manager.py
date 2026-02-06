@@ -41,6 +41,7 @@ class BackgroundTask:
     error: Optional[str] = None
     progress: float = 0.0
     is_background: bool = True
+    user_id: Optional[str] = None  # 发起任务的用户
 
 
 class TaskManager:
@@ -50,6 +51,7 @@ class TaskManager:
     - 支持后台运行
     - 支持任务取消
     - 支持进度跟踪
+    - 支持完成通知
     """
     
     def __init__(self, max_workers: int = 5):
@@ -70,7 +72,14 @@ class TaskManager:
         self._loop = None
         self._async_tasks: Dict[str, asyncio.Task] = {}
         
+        # 通知回调 (user_id, task_id, result_dict)
+        self._notification_callback: Optional[Callable[[str, str, Dict], Any]] = None
+        
         log.info(f"任务管理器初始化完成，最大工作线程: {max_workers}")
+
+    def set_notification_callback(self, callback: Callable[[str, str, Dict], Any]):
+        """设置完成通知回调"""
+        self._notification_callback = callback
     
     async def submit_task(
         self,
@@ -78,6 +87,7 @@ class TaskManager:
         func: Callable,
         *args,
         is_background: bool = True,
+        user_id: str = "default",  # 默认用户
         **kwargs
     ) -> str:
         """
@@ -88,6 +98,7 @@ class TaskManager:
             func: 要执行的函数
             *args: 位置参数
             is_background: 是否后台运行
+            user_id: 发起用户 ID
             **kwargs: 关键字参数
             
         Returns:
@@ -102,43 +113,60 @@ class TaskManager:
             func=func,
             args=args,
             kwargs=kwargs,
-            is_background=is_background
+            is_background=is_background,
+            user_id=user_id
         )
         
         self._tasks[task_id] = task
         
         if is_background:
+            # 获取当前事件循环
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                #如果没有运行的 loop (极少见情况)，则无法调度回调
+                log.warning(f"无法获取事件循环，任务 {name} 完成后可能无法触发异步通知")
+                loop = None
+
             # 后台任务：在线程池中运行
             future = self._executor.submit(self._run_task, task)
-            future.add_done_callback(
-                lambda f: asyncio.create_task(
-                    self._on_task_complete(task_id, f)
-                )
-            )
-            log.info(f"后台任务已提交: {name} (ID: {task_id})")
+            
+            def done_callback(f):
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._on_task_complete(task_id, f),
+                        loop
+                    )
+            
+            future.add_done_callback(done_callback)
+            log.info(f"后台任务已提交: {name} (ID: {task_id}, User: {user_id})")
         else:
             # 前台任务：在事件循环中运行
             task = asyncio.create_task(self._run_async_task(task))
             self._async_tasks[task_id] = task
-            log.info(f"前台任务已提交: {name} (ID: {task_id})")
+            log.info(f"前台任务已提交: {name} (ID: {task_id}, User: {user_id})")
         
         return task_id
     
     def _run_task(self, task: BackgroundTask) -> Any:
         """
         在线程中运行同步任务
-        
-        Args:
-            task: 后台任务
-            
-        Returns:
-            任务结果
         """
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now().isoformat()
         
         try:
             result = task.func(*task.args, **task.kwargs)
+            
+            # 如果结果是协程 (例如 async 函数或 partial(async_func))，则在独立事件循环中运行
+            if asyncio.iscoroutine(result):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(result)
+                finally:
+                    loop.close()
+            
             task.status = TaskStatus.COMPLETED
             task.result = result
             return result
@@ -153,12 +181,6 @@ class TaskManager:
     async def _run_async_task(self, task: BackgroundTask) -> Any:
         """
         运行异步任务
-        
-        Args:
-            task: 后台任务
-            
-        Returns:
-            任务结果
         """
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now().isoformat()
@@ -184,24 +206,44 @@ class TaskManager:
             raise
         finally:
             task.completed_at = datetime.now().isoformat()
+            # 异步任务手动触发完成回调 (对于 submit 放在 async_tasks 中的情况)
+            # 注意: 这里简单起见，不重复触发，因为 caller 一般会 await.
+            # 但为了统一通知，我们可以在这里调用 _notify
+            await self._notify_completion(task)
     
     async def _on_task_complete(self, task_id: str, future):
-        """
-        任务完成回调
-        
-        Args:
-            task_id: 任务 ID
-            future: Future 对象
-        """
+        """任务完成回调 (线程池任务)"""
         try:
             result = future.result()
             if task_id in self._tasks:
-                self._tasks[task_id].result = result
-                log.info(f"任务完成: {self._tasks[task_id].name} (ID: {task_id})")
+                task = self._tasks[task_id]
+                task.result = result
+                log.info(f"任务完成: {task.name} (ID: {task_id})")
+                
+                # 触发通知
+                await self._notify_completion(task)
+                
         except Exception as e:
             if task_id in self._tasks:
-                self._tasks[task_id].error = str(e)
-                log.error(f"任务异常: {self._tasks[task_id].name}, 错误: {e}")
+                task = self._tasks[task_id]
+                task.error = str(e)
+                log.error(f"任务异常: {task.name}, 错误: {e}")
+                # 失败也通知
+                await self._notify_completion(task)
+                
+    async def _notify_completion(self, task: BackgroundTask):
+        """发送完成通知"""
+        if self._notification_callback and task.user_id:
+            try:
+                result_data = {
+                    "success": task.status == TaskStatus.COMPLETED,
+                    "output": task.result,
+                    "error": task.error,
+                    "name": task.name
+                }
+                await self._notification_callback(task.user_id, task.task_id, result_data)
+            except Exception as e:
+                log.error(f"发送任务通知失败: {e}")
     
     def cancel_task(self, task_id: str) -> bool:
         """

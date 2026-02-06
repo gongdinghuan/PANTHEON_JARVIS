@@ -22,12 +22,17 @@ except ImportError:
     EDGE_TTS_AVAILABLE = False
 
 # Pygame 用于播放音频
+PYGAME_AVAILABLE = False
 try:
     import pygame
-    pygame.mixer.init()
-    PYGAME_AVAILABLE = True
-except:
-    PYGAME_AVAILABLE = False
+    try:
+        pygame.mixer.init()
+        PYGAME_AVAILABLE = True
+    except pygame.error as e:
+        # 即使安装了 pygame，如果没有音频设备也可能失败
+        log.warning(f"Pygame 初始化失败 (可能是因为没有音频设备): {e}")
+except ImportError:
+    pass
 
 
 class TTS:

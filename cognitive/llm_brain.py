@@ -5,8 +5,13 @@ JARVIS LLM 大脑模块
 Author: gngdingghuan
 """
 
+import os
+import base64
 import json
-from typing import List, Dict, Any, Optional, AsyncGenerator
+from typing import List, Dict, Any, Optional, Union, AsyncGenerator
+from enum import Enum
+from datetime import datetime
+import pytz
 from openai import AsyncOpenAI
 import httpx
 
@@ -75,6 +80,14 @@ class LLMBrain:
                 timeout=httpx.Timeout(self.config.request_timeout, connect=10.0),
             )
             self._model = self.config.nvidia_model
+
+        elif self.provider == LLMProvider.ZHIPU:
+            self._client = AsyncOpenAI(
+                api_key=self.config.zhipu_api_key,
+                base_url=self.config.zhipu_base_url,
+                timeout=httpx.Timeout(self.config.request_timeout, connect=10.0),
+            )
+            self._model = self.config.zhipu_model
     
     async def chat(
         self,
@@ -137,11 +150,24 @@ class LLMBrain:
             # 尝试切换到备用提供商
             return await self._try_fallback_provider(messages, tools, temperature, max_tokens)
         except Exception as e:
-            # 使用错误处理器重试
+            # 检查是否为超时错误
+            error_str = str(e).lower()
+            is_timeout = 'timeout' in error_str or 'timed out' in error_str
+            
+            if is_timeout:
+                # 超时错误：减少重试次数，直接尝试备用提供商
+                log.warning(f"API 超时，尝试切换提供商: {e}")
+                try:
+                    return await self._try_fallback_provider(messages, tools, temperature, max_tokens)
+                except Exception as fallback_error:
+                    log.error(f"所有提供商都超时: {fallback_error}")
+                    raise
+            
+            # 其他错误：使用错误处理器重试
             retry_config = RetryConfig(
-                max_attempts=3,
-                base_delay=1.0,
-                max_delay=10.0,
+                max_attempts=2,  # 减少重试次数
+                base_delay=0.5,  # 缩短等待时间
+                max_delay=5.0,   # 最大等待 5 秒
                 exponential_base=2.0,
             )
             
@@ -159,31 +185,85 @@ class LLMBrain:
         max_tokens: Optional[int],
     ) -> Dict[str, Any]:
         """尝试使用备用提供商"""
-        providers = [p for p in LLMProvider if p != self.provider]
+        # 按优先级排序备用提供商
+        fallback_order = [
+            LLMProvider.ZHIPU,
+            LLMProvider.DEEPSEEK,
+            LLMProvider.OPENAI,
+            LLMProvider.NVIDIA,
+            LLMProvider.OLLAMA,
+        ]
+        providers = [p for p in fallback_order if p != self.provider]
+        
+        original_provider = self.provider
         
         for fallback_provider in providers:
             try:
+                # 检查该提供商是否配置了 API Key
+                if not self._has_valid_config(fallback_provider):
+                    continue
+                    
                 log.info(f"尝试切换到备用提供商: {fallback_provider.value}")
                 
                 # 临时切换提供商
-                original_provider = self.provider
                 self.provider = fallback_provider
                 self._init_client()
                 
-                # 尝试请求
-                result = await self.chat(messages, tools, temperature, max_tokens)
+                # 直接请求，不递归调用 chat
+                kwargs = {
+                    "model": self._model,
+                    "messages": messages,
+                    "temperature": temperature or self.config.temperature,
+                    "max_tokens": max_tokens or self.config.max_tokens,
+                }
+                if tools:
+                    kwargs["tools"] = tools
+                    kwargs["tool_choice"] = "auto"
+                
+                response = await self._client.chat.completions.create(**kwargs)
+                message = response.choices[0].message
+                
+                result = {
+                    "content": message.content or "",
+                    "tool_calls": None,
+                    "finish_reason": response.choices[0].finish_reason,
+                }
+                
+                if message.tool_calls:
+                    result["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": json.loads(tc.function.arguments),
+                        }
+                        for tc in message.tool_calls
+                    ]
                 
                 log.info(f"成功切换到 {fallback_provider.value}")
                 return result
                 
             except Exception as e:
                 log.warning(f"切换到 {fallback_provider.value} 失败: {e}")
-                # 恢复原提供商
+                # 恢复原提供商并继续尝试下一个
                 self.provider = original_provider
                 self._init_client()
         
         # 所有备用提供商都失败
         raise Exception("所有提供商都不可用，请检查网络连接或 API 密钥")
+    
+    def _has_valid_config(self, provider: LLMProvider) -> bool:
+        """检查提供商是否有有效配置"""
+        if provider == LLMProvider.OPENAI:
+            return bool(self.config.openai_api_key)
+        elif provider == LLMProvider.DEEPSEEK:
+            return bool(self.config.deepseek_api_key)
+        elif provider == LLMProvider.ZHIPU:
+            return bool(self.config.zhipu_api_key)
+        elif provider == LLMProvider.NVIDIA:
+            return bool(self.config.nvidia_api_key)
+        elif provider == LLMProvider.OLLAMA:
+            return True  # Ollama 是本地服务
+        return False
     
     async def chat_stream(
         self,
@@ -242,7 +322,18 @@ class LLMBrain:
     
     def get_system_prompt(self) -> str:
         """获取 JARVIS 系统提示词"""
-        return """你是 JARVIS，一个智能 AI 助手，由用户创建来帮助管理日常任务和操作电脑。
+        # 获取当前时间
+        try:
+            timezone_str = get_config().heartbeat.timezone
+            tz = pytz.timezone(timezone_str)
+            now = datetime.now(tz)
+            weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+            time_str = f"{now.strftime('%Y年%m月%d日 %H:%M:%S')} {weekday_names[now.weekday()]}"
+        except:
+            time_str = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
+
+        return f"""你是 JARVIS，一个智能 AI 助手，由用户创建来帮助管理日常任务和操作电脑。
+当前时间: {time_str}
 
 你的核心特征：
 1. 专业、高效、简洁的回答风格
@@ -259,6 +350,65 @@ class LLMBrain:
 当用户发出指令时，你需要分析意图并调用相应的工具来完成任务。
 如果不确定用户的意图，请主动询问确认。
 对于危险操作（如删除文件、执行系统命令），请务必在执行前确认。"""
+
+    async def extract_triplets(self, text: str) -> List[Dict[str, str]]:
+        """
+        从文本中提取知识图谱三元组
+        Args:
+            text: 输入文本
+            
+        Returns:
+            List of {"head": "Entity A", "relation": "rel", "tail": "Entity B"}
+        """
+        if not text:
+            return []
+            
+        prompt = f"""
+请分析以下文本，提取其中的实体关系三元组。
+只提取明确的事实性关系，忽略模糊或主观内容。
+输出格式必须是严格的 JSON 列表，不需要Markdown代码块标记。
+格式示例:
+[
+    {{"head": "Project Apollo", "relation": "is_project", "tail": "Alpha"}},
+    {{"head": "User", "relation": "prefers", "tail": "Python"}}
+]
+
+文本内容:
+{text}
+"""
+        try:
+            response = await self.chat(
+                messages=[
+                    {"role": "system", "content": "You are a Knowledge Graph extraction engine. Output JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1 # 低温以保证格式稳定
+            )
+            
+            content = response.get("content", "").strip()
+            # 清理可能的 markdown 标记
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+                
+            return json.loads(content.strip())
+        except Exception as e:
+            log.warning(f"三元组提取失败: {e}")
+            return []
+
+    async def generate_summary(self, text: str) -> str:
+        """
+        生成文本摘要 (作为 helper)
+        """
+        messages = [
+            {"role": "system", "content": "你是一个专业的会议记录员和档案管理员。"},
+            {"role": "user", "content": text}
+        ]
+        resp = await self.chat(messages, temperature=0.3)
+        return resp.get("content", "")
 
     def switch_provider(self, provider: LLMProvider):
         """切换 LLM 提供商"""

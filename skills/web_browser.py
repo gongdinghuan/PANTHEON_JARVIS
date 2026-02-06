@@ -18,6 +18,12 @@ from config import get_config, SearchProvider
 from utils.logger import log
 from utils.platform_utils import open_url_in_browser
 
+try:
+    from googlesearch import search as google_search
+    GOOGLE_SEARCH_AVAILABLE = True
+except ImportError:
+    GOOGLE_SEARCH_AVAILABLE = False
+
 
 class BaseSearchEngine(ABC):
     """搜索引擎基类"""
@@ -223,6 +229,46 @@ class DuckDuckGoSearcher(BaseSearchEngine):
             return []
 
 
+
+class GoogleSearcher(BaseSearchEngine):
+    """Google 搜索引擎"""
+    
+    def __init__(self, timeout: int = 30):
+        super().__init__(timeout)
+        self.available = GOOGLE_SEARCH_AVAILABLE
+    
+    async def search(self, query: str, max_results: int = 10) -> List[Dict[str, str]]:
+        """使用 Google 搜索"""
+        if not self.available:
+            log.warning("googlesearch-python 未安装")
+            return []
+        
+        log.info(f"使用 Google 搜索: {query}")
+        
+        try:
+            # googlesearch-python 是同步库，在线程中运行
+            import asyncio
+            from utils.compat import to_thread
+            
+            def _sync_search():
+                results = []
+                # advanced=True 返回详细对象
+                for res in google_search(query, num_results=max_results, advanced=True):
+                    results.append({
+                        "title": res.title,
+                        "url": res.url,
+                        "snippet": res.description
+                    })
+                return results
+
+            results = await to_thread(_sync_search)
+            log.info(f"Google 搜索返回 {len(results)} 条结果")
+            return results
+            
+        except Exception as e:
+            log.error(f"Google 搜索失败: {e}")
+            return []
+
 class WebBrowserSkill(BaseSkill):
     """网页浏览技能"""
     
@@ -256,6 +302,8 @@ class WebBrowserSkill(BaseSkill):
             return BaiduSearcher(timeout=self.config.search_timeout)
         elif provider == SearchProvider.DUCKDUCKGO:
             return DuckDuckGoSearcher(timeout=self.config.search_timeout)
+        elif provider == SearchProvider.GOOGLE:
+            return GoogleSearcher(timeout=self.config.search_timeout)
         else:
             log.warning(f"未知的搜索引擎提供商: {provider}，使用百度搜索")
             return BaiduSearcher(timeout=self.config.search_timeout)

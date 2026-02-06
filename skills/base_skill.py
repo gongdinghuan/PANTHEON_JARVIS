@@ -28,6 +28,8 @@ class SkillResult:
     confirmation_message: Optional[str] = None
     is_background: bool = False
     task_id: Optional[str] = None
+    visualization: Optional[Dict[str, Any]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None  # 文件附件列表
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -37,7 +39,9 @@ class SkillResult:
             "needs_confirmation": self.needs_confirmation,
             "confirmation_message": self.confirmation_message,
             "is_background": self.is_background,
-            "task_id": self.task_id
+            "task_id": self.task_id,
+            "visualization": self.visualization,
+            "attachments": self.attachments
         }
 
 

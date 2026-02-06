@@ -620,7 +620,115 @@ class SelfEvolutionEngine:
             
         except Exception as e:
             log.warning(f"加载状态失败: {e}")
-    
+
+    def search_similar_experience(self, task_description: str, task_type: Optional[str] = None, limit: int = 3) -> List[Dict]:
+        """
+        搜索相似的成功经验
+        
+        Args:
+            task_description: 任务描述
+            task_type: 任务类型（可选，用于过滤）
+            limit: 限制数量
+            
+        Returns:
+            相似经验列表
+        """
+        if not self.memory._collection:
+            return []
+            
+        try:
+            # 构建过滤条件 (使用 $and 显式组合)
+            # ChromaDB 要求: 多条件必须用 $and 或 $or 包裹，或者每个条件是单独的 dict
+            base_conditions = [
+                {"type": "experience"},
+                {"success": "True"}
+            ]
+            
+            if task_type:
+                base_conditions.append({"task_type": task_type})
+            
+            if len(base_conditions) > 1:
+                where_clause = {"$and": base_conditions}
+            else:
+                where_clause = base_conditions[0]
+            
+            results = self.memory._collection.query(
+                query_texts=[task_description],
+                n_results=limit * 2, #以此获取更多候选
+                where=where_clause
+            )
+            
+            experiences = []
+            if results["documents"] and results["documents"][0]:
+                for i, doc in enumerate(results["documents"][0]):
+                    metadata = results["metadatas"][0][i]
+                    # 再次过滤: 确保是成功的经验
+                    if metadata.get("success") == "True":
+                       try:
+                           exp_data = json.loads(doc)
+                           experiences.append({
+                               "task_type": exp_data.get("task_type"),
+                               "user_input": exp_data.get("user_input"),
+                               "tools_used": exp_data.get("tools_used"),
+                               "response": exp_data.get("response"),
+                               "execution_time": exp_data.get("execution_time"),
+                               "score": results["distances"][0][i] if results["distances"] else 0
+                           })
+                       except:
+                           pass
+            
+            # 按相关性排序
+            experiences.sort(key=lambda x: x["score"])
+            return experiences[:limit]
+            
+        except Exception as e:
+            log.warning(f"搜索相似经验失败: {e}")
+            return []
+
+    def analyze_failure(self, error: str, task_context: str) -> Optional[str]:
+        """
+        分析失败并寻找历史解决方案 (Reflexion)
+        
+        Args:
+            error: 错误信息
+            task_context: 任务上下文
+            
+        Returns:
+            建议的解决方案
+        """
+        # TODO: 暂时简单实现，未来可以检索 error 数据库
+        error_lower = error.lower()
+        if "timeout" in error_lower or "timed out" in error_lower:
+            return "建议增加超时时间或减少请求的数据量。"
+        if "rate limit" in error_lower or "429" in error_lower:
+            return "检测到速率限制，建议等待一段时间后重试，或切换 API Key。"
+        if "not found" in error_lower or "404" in error_lower:
+            return "目标资源不存在，请检查 URL 或文件名是否正确。"
+            
+        return None
+
+    def analyze_failure(self, error: str, task_context: str) -> Optional[str]:
+        """
+        分析失败并寻找历史解决方案 (Reflexion)
+        
+        Args:
+            error: 错误信息
+            task_context: 任务上下文
+            
+        Returns:
+            建议的解决方案
+        """
+        # TODO: 暂时简单实现，未来可以检索 error 数据库
+        error_lower = error.lower()
+        if "timeout" in error_lower or "timed out" in error_lower:
+            return "建议增加超时时间或减少请求的数据量。"
+        if "rate limit" in error_lower or "429" in error_lower:
+            return "检测到速率限制，建议等待一段时间后重试，或切换 API Key。"
+        if "not found" in error_lower or "404" in error_lower:
+            return "目标资源不存在，请检查 URL 或文件名是否正确。"
+            
+        return None
+        
     def export_knowledge(self) -> Dict[str, Any]:
         """导出学习到的知识"""
         return {

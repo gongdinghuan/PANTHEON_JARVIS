@@ -11,7 +11,7 @@ import json
 import os
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Union
 from pathlib import Path
 
 from skills.base_skill import BaseSkill, SkillResult, PermissionLevel, create_tool_schema
@@ -63,15 +63,27 @@ class SchedulerSkill(BaseSkill):
             self.saved_tasks = []
     
     def save_tasks(self):
-        """保存任务到文件"""
+        """保存任务到文件 (已排除非持久化任务)"""
         try:
+            # 只保存 persistent != False 的任务
+            # (处理旧数据默认没有 persistent 字段的情况，视为 True)
+            tasks_to_save = [
+                task for task in self.saved_tasks 
+                if task.get("persistent", True) and not callable(task.get("command"))
+            ]
+            
             with open(self.tasks_file, 'w', encoding='utf-8') as f:
-                json.dump(self.saved_tasks, f, ensure_ascii=False, indent=2)
+                json.dump(tasks_to_save, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
             log.error(f"保存任务失败: {e}")
             return False
     
+    def set_planner(self, planner):
+        """注入 Planner 实例"""
+        self.planner = planner
+        log.info("已注入 Planner，定时任务支持自然语言指令")
+
     async def execute(self, action: str, **params) -> SkillResult:
         """
         执行定时任务操作
@@ -103,18 +115,25 @@ class SchedulerSkill(BaseSkill):
             log.error(f"定时任务操作失败: {action}, 错误: {e}")
             return SkillResult(success=False, output=None, error=str(e))
     
+    async def register_task(self, *args, **kwargs):
+        """register_task 是 _create_task 的别名，供外部直接调用"""
+        return await self._create_task(*args, **kwargs)
+
     async def _create_task(
         self,
         name: str,
-        command: str,
+        command: Union[str, Callable],
         schedule_type: str = "once",
         time_str: Optional[str] = None,
         interval_minutes: Optional[int] = None,
         days_of_week: Optional[List[str]] = None,
-        enabled: bool = True
+        enabled: bool = True,
+        execution_mode: str = "brain",
+        description: str = "",
+        persistent: bool = True
     ) -> SkillResult:
         """创建定时任务"""
-        log.info(f"创建定时任务: {name}")
+        log.info(f"创建定时任务: {name}, 模式: {execution_mode}, 持久化: {persistent}")
         
         task_id = f"task_{int(time.time())}_{len(self.saved_tasks)}"
         
@@ -124,6 +143,9 @@ class SchedulerSkill(BaseSkill):
             "command": command,
             "schedule_type": schedule_type,
             "enabled": enabled,
+            "execution_mode": execution_mode,
+            "persistent": persistent,
+            "description": description,
             "created_at": datetime.now().isoformat(),
             "last_run": None,
             "next_run": None
@@ -256,7 +278,7 @@ class SchedulerSkill(BaseSkill):
         
         for task in self.saved_tasks:
             if task["id"] == task_id:
-                result = await self._execute_task_command(task["command"])
+                result = await self._execute_task_command(task)
                 
                 # 更新最后运行时间
                 task["last_run"] = datetime.now().isoformat()
@@ -337,7 +359,7 @@ class SchedulerSkill(BaseSkill):
                     
                     # 执行任务
                     log.info(f"执行定时任务: {task['name']}")
-                    await self._execute_task_command(task["command"])
+                    await self._execute_task_command(task)
                     
                     # 更新最后运行时间
                     task["last_run"] = datetime.now().isoformat()
@@ -360,18 +382,61 @@ class SchedulerSkill(BaseSkill):
         runner_task = asyncio.create_task(task_runner())
         self.running_tasks[task_id] = runner_task
     
-    async def _execute_task_command(self, command: str) -> Dict[str, Any]:
+    async def _execute_task_command(self, task_data: Any) -> Dict[str, Any]:
         """执行任务命令"""
+        
+        # 解析参数
+        if isinstance(task_data, str):
+            command = task_data
+            execution_mode = "shell"
+        else:
+            command = task_data.get("command", "")
+            execution_mode = task_data.get("execution_mode", "shell")
+            
+        # 模式1: 大脑执行 (调用 Planner)
+        if execution_mode == "brain":
+            if hasattr(self, 'planner') and self.planner:
+                log.info(f"通过大脑执行指令: {command}")
+                try:
+                    # 调用 Planner 执行自然语言指令
+                    result = await self.planner.plan_and_execute(command, user_id="scheduler")
+                    return result
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"大脑执行失败: {str(e)}"
+                    }
+            else:
+                return {
+                    "success": False, 
+                    "error": "无法执行指令：未连接到大脑 (Planner not set)"
+                }
+
+        # 模式2: 函数直接执行 (In-Memory Callable)
+        if execution_mode == "function":
+            if callable(command):
+                log.info(f"执行内部函数任务: {task_data.get('name', 'Unknown')}")
+                try:
+                    if asyncio.iscoroutinefunction(command) or (isinstance(command, functools.partial) and asyncio.iscoroutinefunction(command.func)):
+                        await command()
+                    else:
+                        await asyncio.to_thread(command)
+                    return {"success": True, "output": "Function executed successfully"}
+                except Exception as e:
+                    log.error(f"函数执行失败: {e}")
+                    return {"success": False, "error": str(e)}
+            else:
+                return {"success": False, "error": "Command is not callable"}
+        
+        # 模式3: Shell 执行 (原有逻辑)
         try:
-            # 这里可以扩展支持不同类型的命令
-            # 目前支持简单的系统命令
             import subprocess
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5分钟超时
+                timeout=300
             )
             
             return {
@@ -480,7 +545,7 @@ class SchedulerSkill(BaseSkill):
             # 创建回调函数
             async def task_callback():
                 log.info(f"执行时间点任务: {task['name']}")
-                result = await self._execute_task_command(task["command"])
+                result = await self._execute_task_command(task)
                 task["last_run"] = datetime.now().isoformat()
                 self.save_tasks()
                 return result

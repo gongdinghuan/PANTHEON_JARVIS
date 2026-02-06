@@ -99,6 +99,13 @@ class ReActPlanner:
         """构建系统提示词"""
         base_prompt = self.brain.get_system_prompt()
         
+        # 核心记忆 (User Profile)
+        core_memory_text = ""
+        if hasattr(self.memory, 'get_core_memory_text'):
+            core_memory_text = self.memory.get_core_memory_text()
+            if core_memory_text:
+                core_memory_text = f"\n\n{core_memory_text}"
+        
         # 添加上下文信息
         context_summary = self.context.get_context_summary()
         
@@ -110,7 +117,7 @@ class ReActPlanner:
         
         skills_text = "\n".join(skill_list) if skill_list else "暂无可用技能"
         
-        full_prompt = f"""{base_prompt}
+        full_prompt = f"""{base_prompt}{core_memory_text}
 
 当前上下文信息：
 {context_summary}
@@ -126,12 +133,13 @@ class ReActPlanner:
         
         return full_prompt
     
-    async def plan_and_execute(self, user_input: str) -> str:
+    async def plan_and_execute(self, user_input: str, user_id: str = "default") -> str:
         """
         规划并执行任务（带自我进化）
         
         Args:
             user_input: 用户输入
+            user_id: 用户标识
             
         Returns:
             最终回复
@@ -139,15 +147,23 @@ class ReActPlanner:
         start_time = time.time()
         task_type = self._classify_task(user_input)
         
-        log.info(f"收到用户请求: {user_input[:50]}...")
+        log.info(f"收到用户请求: {user_input[:50]}... (User: {user_id})")
         log.debug(f"任务类型: {task_type}")
         
-        # 使用自我进化引擎预测
         if self.evolution_engine:
             prediction = self.evolution_engine.predict_next_action(user_input)
             if prediction:
                 log.info(f"预测任务: {prediction['task_type']} (置信度: {prediction['confidence']:.1%})")
                 log.debug(f"建议工具: {prediction['suggested_tools']}")
+            
+            # [新增] 检索相似的成功经验 (使用任务类型过滤，提高准确性)
+            similar_experiences = self.evolution_engine.search_similar_experience(
+                user_input, 
+                task_type=task_type,
+                limit=10
+            )
+        else:
+            similar_experiences = []
         
         # 保存到短期记忆
         self.memory.add_message("user", user_input)
@@ -155,10 +171,32 @@ class ReActPlanner:
         # 获取上下文和历史
         messages = []
         
+        # [新增] Holo-Mem 混合语境检索 (Graph + Vector)
+        holo_context = await self.memory.retrieve_context_hybrid(user_input)
+        holo_context_text = ""
+        if holo_context:
+            holo_context_text = "\n\n## 动态语境 (Holo-Mem)\n" + "\n".join(holo_context)
+
         # 系统提示词
+        base_system_prompt = self._build_system_prompt()
+        
+        # [新增] 注入经验到系统提示词 (优化版)
+        experience_text = ""
+        if similar_experiences:
+            exp_lines = ["\n\n【相关成功经验参考】"]
+            for i, exp in enumerate(similar_experiences):
+                tools_str = ", ".join(exp.get('tools_used', []))
+                time_cost = exp.get('execution_time', 0)
+                exp_lines.append(f"经验 #{i+1}:")
+                exp_lines.append(f"  - 用户请求: '{exp.get('user_input')}'")
+                exp_lines.append(f"  - 成功路径: 使用工具 [{tools_str}]")
+                exp_lines.append(f"  - 耗时: {time_cost:.2f}s")
+                exp_lines.append(f"  - 建议: 请参考此工具组合路径来解决当前问题。")
+            experience_text = "\n".join(exp_lines)
+            
         messages.append({
             "role": "system",
-            "content": self._build_system_prompt()
+            "content": f"{base_system_prompt}{holo_context_text}{experience_text}"
         })
         
         # 历史对话
@@ -171,6 +209,8 @@ class ReActPlanner:
         iteration = 0
         final_response = ""
         tools_used = []
+        visualizations = []
+        attachments = []  # 收集文件附件
         success = True
         
         while iteration < self.MAX_ITERATIONS:
@@ -213,11 +253,28 @@ class ReActPlanner:
                     })
                     
                     for tc, result in zip(response["tool_calls"], tool_results):
+                        # [新增] 如果失败，尝试分析原因并注入到上下文中
+                        extra_info = ""
+                        if not result.get("success", True) and self.evolution_engine:
+                            error_msg = result.get("error", "Unknown error")
+                            suggestion = self.evolution_engine.analyze_failure(error_msg, str(tc))
+                            if suggestion:
+                                extra_info = f"\n[JARVIS Evolution Suggestion]: 检测到错误，建议尝试: {suggestion}"
+                                log.info(f"应用进化建议: {suggestion}")
+                        
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": json.dumps(result, ensure_ascii=False)
+                            "content": json.dumps(result, ensure_ascii=False) + extra_info
                         })
+                        
+                        # 收集可视化数据
+                        if isinstance(result, dict) and "visualization" in result and result["visualization"]:
+                            visualizations.append(result["visualization"])
+                        
+                        # 收集文件附件
+                        if isinstance(result, dict) and "attachments" in result and result["attachments"]:
+                            attachments.extend(result["attachments"])
                     
                     # 继续循环，让 LLM 处理结果
                     continue
@@ -255,7 +312,16 @@ class ReActPlanner:
             )
         
         log.info(f"请求处理完成，共 {iteration} 次循环，耗时 {execution_time:.2f}秒")
-        return final_response
+        
+        # 返回结果和可视化数据
+        if visualizations or attachments:
+            return {
+                "content": final_response,
+                "visualizations": visualizations,
+                "attachments": attachments
+            }
+        else:
+            return final_response
     
     def _classify_task(self, user_input: str) -> str:
         """
@@ -283,52 +349,63 @@ class ReActPlanner:
         
         return "其他"
     
-    async def _execute_tool_calls(self, tool_calls: List[Dict]) -> List[Dict]:
+    async def _execute_tool_calls(self, tool_calls: List[Dict], user_id: str = "default") -> List[Dict]:
         """执行工具调用（带自动重试和错误处理，支持后台任务）"""
         results = []
         
-        # 重置工具使用记录
-        self._last_used_tools = []
-        
-        for tc in tool_calls:
-            name = tc["name"]
-            arguments = tc["arguments"]
+        for tool_call in tool_calls:
+            # LLMBrain 返回的是简化结构: {"id":..., "name":..., "arguments":...}
+            # 且 arguments 已经是 dict
+            name = tool_call["name"]
+            arguments = tool_call["arguments"]
+            tool_call_id = tool_call["id"]
             
-            log.info(f"执行工具: {name}, 参数: {arguments}")
+            # double check: 如果 arguments 是字符串 (兼容性)
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except:
+                    pass
             
-            # 记录使用的工具
-            if name not in self._last_used_tools:
-                self._last_used_tools.append(name)
-            
+            # 检查技能是否存在
             if name not in self.skills:
                 results.append({
+                    "tool_call_id": tool_call_id,
+                    "name": name,
                     "success": False,
-                    "error": f"未知的技能: {name}"
+                    "error": f"Tool '{name}' not found"
                 })
                 continue
             
             skill = self.skills[name]
             
-            # 检查是否请求后台执行
-            run_in_background = arguments.pop("run_in_background", False)
+            # 检测是否请求后台执行
+            run_in_background = False
+            if "run_in_background" in arguments:
+                run_in_background = arguments.pop("run_in_background")
+            elif "background" in arguments:
+                run_in_background = arguments.pop("background")
             
-            # 检查技能是否支持后台执行
-            if run_in_background and not (hasattr(skill, 'can_run_background') and skill.can_run_background()):
-                log.warning(f"技能 {name} 不支持后台执行，将转为前台执行")
-                run_in_background = False
+            # 手动指定的后台技能强制后台运行
+            if name == "background_task":
+                run_in_background = True
+            
+            log.info(f"执行工具: {name}, 参数: {arguments}, 后台: {run_in_background}")
             
             if run_in_background:
                 # 后台执行
                 task_id = str(uuid.uuid4())
-                result = await self._execute_background_task(name, skill, arguments, task_id)
+                result = await self._execute_background_task(name, skill, arguments, task_id, user_id)
+                result["tool_call_id"] = tool_call_id
                 results.append(result)
             else:
                 # 前台执行
                 result = await self._execute_foreground_task(name, skill, arguments)
+                result["tool_call_id"] = tool_call_id
                 results.append(result)
         
         return results
-    
+
     async def _execute_foreground_task(self, name: str, skill: Any, arguments: Dict) -> Dict:
         """前台执行任务"""
         # 获取或创建该技能的熔断器
@@ -356,7 +433,16 @@ class ReActPlanner:
                             )
                 
                 # 执行技能
-                return await skill.execute(**arguments)
+                if asyncio.iscoroutinefunction(skill.execute):
+                    output = await skill.execute(**arguments)
+                else:
+                    # 在线程池中执行同步技能
+                    output = await asyncio.to_thread(skill.execute, **arguments)
+                
+                return SkillResult(
+                    success=True,
+                    output=output
+                )
             
             # 通过熔断器执行
             result = await circuit_breaker.call(_execute)
@@ -397,9 +483,9 @@ class ReActPlanner:
                     "error": f"执行失败（已重试）: {str(retry_error)}"
                 }
     
-    async def _execute_background_task(self, name: str, skill: Any, arguments: Dict, task_id: str) -> Dict:
+    async def _execute_background_task(self, name: str, skill: Any, arguments: Dict, task_id: str, user_id: str) -> Dict:
         """后台执行任务"""
-        log.info(f"提交后台任务: {name}, 任务ID: {task_id}")
+        log.info(f"提交后台任务: {name}, 任务ID: {task_id}, 用户: {user_id}")
         
         # 设置技能的 task_id
         if hasattr(skill, 'set_task_id'):
@@ -413,20 +499,24 @@ class ReActPlanner:
         if hasattr(skill, 'set_progress_callback'):
             skill.set_progress_callback(lambda p: asyncio.create_task(progress_callback(p)))
         
+        # 使用 partial 绑定参数，避免参数名与 submit_task 的参数（如 name）冲突
+        import functools
+        func_to_run = functools.partial(skill.execute, **arguments)
+        
         # 提交任务到任务管理器
         submitted_task_id = await self.task_manager.submit_task(
             name=f"{name}_task",
-            func=skill.execute,
-            *(),
+            func=func_to_run,
             is_background=True,
-            **arguments
+            user_id=user_id
         )
         
         log.info(f"后台任务已提交: {submitted_task_id}")
         
         return {
+            "name": name,
             "success": True,
-            "output": f"任务已提交到后台执行，任务ID: {submitted_task_id}",
+            "output": f"任务已提交到后台执行，任务ID: {submitted_task_id} (稍后会自动汇报结果)",
             "is_background": True,
             "task_id": submitted_task_id
         }
@@ -437,7 +527,8 @@ class ReActPlanner:
             result_dict = {
                 "success": result.success,
                 "output": result.output,
-                "error": result.error
+                "error": result.error,
+                "visualization": result.visualization
             }
             # 检查 output 是否可序列化
             try:
@@ -480,7 +571,7 @@ class ReActPlanner:
         messages = self.memory.get_context_with_memory(user_input)
         messages.insert(0, {
             "role": "system",
-            "content": self.brain.get_system_prompt()
+            "content": self._build_system_prompt()  # 使用包含时间的系统提示词
         })
         
         response = await self.brain.chat(messages)
