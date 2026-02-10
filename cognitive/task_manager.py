@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.logger import log
@@ -41,6 +42,7 @@ class BackgroundTask:
     error: Optional[str] = None
     progress: float = 0.0
     is_background: bool = True
+    is_async: bool = False
     user_id: Optional[str] = None  # 发起任务的用户
 
 
@@ -120,30 +122,41 @@ class TaskManager:
         self._tasks[task_id] = task
         
         if is_background:
-            # 获取当前事件循环
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                #如果没有运行的 loop (极少见情况)，则无法调度回调
-                log.warning(f"无法获取事件循环，任务 {name} 完成后可能无法触发异步通知")
-                loop = None
+            # 判断是否为异步函数
+            is_async = asyncio.iscoroutinefunction(func) or (isinstance(func, partial) and asyncio.iscoroutinefunction(func.func))
+            
+            if is_async:
+                # 异步后台任务：作为 Task 在当前循环运行 (Fire-and-forget)
+                task.is_async = True
+                async_task = asyncio.create_task(self._run_async_task(task))
+                # 添加结束回调以确保清理和通知
+                async_task.add_done_callback(lambda t: None) # 实际处理在 _run_async_task 内
+                self._async_tasks[task_id] = async_task
+                log.info(f"异步后台任务已提交: {name} (ID: {task_id}, User: {user_id})")
+            else:
+                # 同步后台任务：在线程池中运行
+                # 获取当前事件循环以便回调
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
 
-            # 后台任务：在线程池中运行
-            future = self._executor.submit(self._run_task, task)
-            
-            def done_callback(f):
-                if loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._on_task_complete(task_id, f),
-                        loop
-                    )
-            
-            future.add_done_callback(done_callback)
-            log.info(f"后台任务已提交: {name} (ID: {task_id}, User: {user_id})")
+                future = self._executor.submit(self._run_task, task)
+                
+                def done_callback(f):
+                    if loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            self._on_task_complete(task_id, f),
+                            loop
+                        )
+                
+                future.add_done_callback(done_callback)
+                log.info(f"同步后台任务已提交: {name} (ID: {task_id}, User: {user_id})")
         else:
-            # 前台任务：在事件循环中运行
-            task = asyncio.create_task(self._run_async_task(task))
-            self._async_tasks[task_id] = task
+            # 前台任务：在事件循环中运行 (通常由调用者 await)
+            task.is_async = True
+            async_task = asyncio.create_task(self._run_async_task(task))
+            self._async_tasks[task_id] = async_task
             log.info(f"前台任务已提交: {name} (ID: {task_id}, User: {user_id})")
         
         return task_id

@@ -61,6 +61,11 @@ class ContinuousEvolutionEngine:
         self.memory = memory
         self.feedback_callback = feedback_callback
         
+        self.planner = None  # To be injected
+        self.heartbeat = None # Heartbeat engine
+        self.autonomy_enabled = False
+        self.idle_threshold = 1800  # 30 min idle triggers autonomy
+        
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._analysis_interval = 60  # 每60秒分析一次
@@ -102,6 +107,22 @@ class ContinuousEvolutionEngine:
         
         log.info("持续进化引擎已停止")
     
+    def set_planner(self, planner):
+        """注入 Planner 以支持自主行动"""
+        self.planner = planner
+        # 尝试获取 HeartbeatEngine
+        if hasattr(planner, 'scheduler') and hasattr(planner.scheduler, 'heartbeat'):
+             self.heartbeat = planner.scheduler.heartbeat
+
+    def set_heartbeat(self, heartbeat):
+        """直接注入心跳引擎"""
+        self.heartbeat = heartbeat
+
+    def enable_autonomy(self, enabled: bool = True):
+        """启用/禁用自主模式"""
+        self.autonomy_enabled = enabled
+        log.info(f"自主模式已{'启用' if enabled else '禁用'}")
+
     async def _evolution_loop(self):
         """进化循环"""
         while self._running:
@@ -111,11 +132,130 @@ class ContinuousEvolutionEngine:
                 
                 # 执行进化分析
                 await self._analyze_and_evolve()
+
+                # 执行自主行动检查
+                if self.autonomy_enabled and self.planner:
+                    await self._check_and_perform_autonomy()
                 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 log.error(f"进化循环错误: {e}")
+
+    async def _check_and_perform_autonomy(self):
+        """检查并执行自主行为"""
+        try:
+            # 1. 检查是否空闲
+            if not self.heartbeat:
+                return
+
+            last_active = datetime.fromisoformat(self.heartbeat._stats.last_active)
+            idle_seconds = (datetime.now() - last_active).total_seconds()
+            
+            if idle_seconds < self.idle_threshold:
+                return
+            
+            # 2. 只有在确实空闲且没有正在运行的后台任务时才行动
+            #TODO: 检查 TaskManager 状态
+            
+            log.info(f"系统已空闲 {idle_seconds:.0f}秒，正在思考自主行动...")
+            
+            # 3. 构思自主任务
+            autonomous_task = await self._brainstorm_autonomous_task()
+            
+            if autonomous_task:
+                log.info(f"自主决定执行任务: {autonomous_task}")
+                # 执行任务
+                await self.planner.plan_and_execute(
+                    autonomous_task, 
+                    user_id="jarvis_self"
+                )
+                # 更新最后活跃时间以避免连续触发
+                self.heartbeat.record_activity()
+                
+        except Exception as e:
+            log.warning(f"自主行动失败: {e}")
+
+    async def _brainstorm_autonomous_task(self) -> Optional[str]:
+        """头脑风暴：基于好奇心的自主探索"""
+        
+        if not hasattr(self.planner, 'brain'):
+            return None
+            
+        # 1. 获取最近的兴趣点或未解之谜 (从 MemoryGraph 获取)
+        interest_areas = []
+        try:
+             interest_areas = self.memory.get_interest_areas(limit=15)
+        except Exception as e:
+             log.warning(f"获取记忆兴趣点失败: {e}")
+             
+        # Fallback if memory is empty
+        if not interest_areas:
+            interest_areas = [
+                "Latest AI Agents developments",
+                "Python 3.12 new features",
+                "World news digest",
+                "Optimizing vector database performance"
+            ]
+        
+        import random
+        selected_focus = random.choice(interest_areas)
+        
+        prompt = f"""
+        [System Internal Thought Process - Curiosity Mode]
+        
+        I am currently idle and my "Curiosity Drive" is active.
+        I should take this opportunity to explore the world, learn something new, or improve my own capabilities.
+        
+        Current Time: {datetime.now()}
+        Focus of Interest: {selected_focus}
+        
+        Capabilities available:
+        - Web Browser (browse_page, search_web) -> To read news, documentation, or articles.
+        - Code Interpreter -> To run experiments or math.
+        - File Manager -> To organize my own code.
+        - Memory -> To recall past context.
+        
+        What should I do right now to satisfy my curiosity or be helpful?
+        
+        Guidelines:
+        - Be creative and proactive.
+        - Do not just do maintenance; try to learn something external.
+        - If searching the web, specify the query.
+        
+        Examples of good autonomous tasks:
+        - "Search for 'latest breakthroughs in nuclear fusion' and summarize it."
+        - "Read the documentation for 'pydantic' library to see if I can optimize my code."
+        - "Check 'Hacker News' top stories."
+        - "Write a small Python script to visualize the Collatz conjecture."
+        
+        Return a SINGLE, concise, executable instruction string for the Planner.
+        """
+        
+        try:
+            # 使用较高的 Temperature 以增加创造性
+            messages = [
+                {"role": "system", "content": "You are the curious, self-improving consciousness of JARVIS. Act with agency."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = await self.planner.brain.chat(
+                messages=messages,
+                temperature=0.8
+            )
+            
+            action = response.get("content", "").strip().strip('"')
+            
+            # 简单的过滤
+            if len(action) < 5 or "wait" in action.lower():
+                return None
+                
+            return action
+            
+        except Exception as e:
+            log.warning(f"好奇心模块思考失败: {e}")
+            return None
+
     
     async def _analyze_and_evolve(self):
         """分析并进化"""

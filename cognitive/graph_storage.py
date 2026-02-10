@@ -116,6 +116,26 @@ class GraphStorage:
                 matches.append(node)
         return matches
 
+    def get_central_concepts(self, limit: int = 5) -> List[str]:
+        """
+        获取图谱中的核心概念（基于度中心性）
+        用于发现用户最关注的话题或实体
+        """
+        if self.graph.number_of_nodes() == 0:
+            return []
+            
+        try:
+            # 计算度中心性
+            centrality = nx.degree_centrality(self.graph)
+            
+            # 排序并取前 N 个
+            sorted_nodes = sorted(centrality.items(), key=lambda x: x[1], reverse=True)
+            return [node for node, score in sorted_nodes[:limit]]
+            
+        except Exception as e:
+            log.error(f"获取核心概念失败: {e}")
+            return []
+
     def get_graph_summary(self) -> str:
         """获取图谱统计摘要"""
         return f"语义图谱包含 {self.graph.number_of_nodes()} 个实体和 {self.graph.number_of_edges()} 条关系。"

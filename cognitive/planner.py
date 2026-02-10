@@ -10,6 +10,7 @@ import re
 from typing import Dict, List, Any, Optional, Callable
 
 from cognitive.llm_brain import LLMBrain
+from utils.json_utils import repair_json
 from cognitive.memory import MemoryManager
 from cognitive.context_manager import ContextManager
 from cognitive.self_evolution import SelfEvolutionEngine
@@ -183,6 +184,7 @@ class ReActPlanner:
         # [新增] 注入经验到系统提示词 (优化版)
         experience_text = ""
         if similar_experiences:
+            log.info(f"正在注入 {len(similar_experiences)} 条成功经验到 Prompt")
             exp_lines = ["\n\n【相关成功经验参考】"]
             for i, exp in enumerate(similar_experiences):
                 tools_str = ", ".join(exp.get('tools_used', []))
@@ -362,10 +364,31 @@ class ReActPlanner:
             
             # double check: 如果 arguments 是字符串 (兼容性)
             if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except:
-                    pass
+                repaired = repair_json(arguments)
+                if repaired is not None and isinstance(repaired, dict):
+                    arguments = repaired
+                    log.info(f"成功修复工具参数: {name}")
+                else:
+                    # 如果修复失败，说明参数格式错误，无法继续
+                    log.error(f"无法解析工具参数: {name}, args: {arguments[:200]}...")
+                    results.append({
+                        "tool_call_id": tool_call_id,
+                        "name": name,
+                        "success": False,
+                        "error": f"Invalid arguments format (repair failed): {arguments[:200]}..."
+                    })
+                    continue
+            
+            # 确保 arguments 是字典
+            if not isinstance(arguments, dict):
+                 log.error(f"工具参数必须是字典: {name}, got {type(arguments)}")
+                 results.append({
+                        "tool_call_id": tool_call_id,
+                        "name": name,
+                        "success": False,
+                        "error": f"Arguments must be a dictionary, got {type(arguments)}"
+                    })
+                 continue
             
             # 检查技能是否存在
             if name not in self.skills:

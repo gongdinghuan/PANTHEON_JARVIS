@@ -111,8 +111,16 @@ class MemoryManager:
                 settings=Settings(anonymized_telemetry=False)
             )
             
+            # 使用 OpenAI Embedding Function
+            from chromadb.utils import embedding_functions
+            openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=get_config().llm.api_key,
+                model_name=self.config.embedding_model
+            )
+
             self._collection = self._chroma_client.get_or_create_collection(
                 name="jarvis_memory",
+                embedding_function=openai_ef,
                 metadata={"description": "JARVIS conversation memory"}
             )
             
@@ -133,9 +141,15 @@ class MemoryManager:
             metadata: 额外元数据
             importance: 重要性评分 (1-10)
         """
+        # 安全截断，防止 Context Overflow
+        safe_content = content
+        if len(safe_content) > 20000:
+             log.warning(f"新消息过长 ({len(safe_content)} 字符)，正在截断...")
+             safe_content = safe_content[:20000] + f"\n... [Content Truncated due to length {len(safe_content)} > 20000]"
+
         turn = ConversationTurn(
             role=role,
-            content=content,
+            content=safe_content,
             timestamp=datetime.now().isoformat(),
             metadata=metadata,
             importance=importance
@@ -213,15 +227,17 @@ class MemoryManager:
         except Exception as e:
             log.error(f"记忆固化失败: {e}")
 
-    async def retrieve_context_hybrid(self, query: str, limit: int = 5) -> List[str]:
+    async def retrieve_context_hybrid(self, query: str, limit: Optional[int] = None) -> List[str]:
         """
         混合检索 (Hybrid Retrieval): Vector + Graph
         """
+        limit = limit or self.config.retrieval_k  # 使用全局配置
         context_results = []
         
         # 1. 向量检索
         if self._collection:
             try:
+                log.info(f"正在执行向量检索: query='{query[:50]}...', limit={limit}")
                 results = self._collection.query(
                     query_texts=[query],
                     n_results=limit,
@@ -229,10 +245,24 @@ class MemoryManager:
                 )
                 
                 if results['documents'] and results['documents'][0]:
+                    count = len(results['documents'][0])
+                    log.info(f"向量检索命中 {count} 条记录")
+                    
+                    current_chars = 0
+                    MAX_CHARS = 20000  # 限制最大检索内容长度 (约 5k tokens)
+                    
                     for i, doc in enumerate(results['documents'][0]):
+                        if current_chars + len(doc) > MAX_CHARS:
+                            log.warning(f"检索内容达到安全限制 ({MAX_CHARS} 字符)，截断剩余 {count - i} 条记录")
+                            break
+                            
                         context_results.append(f"[History] {doc}")
+                        current_chars += len(doc)
+                else:
+                    log.info("向量检索未找到匹配项")
+                    
             except Exception as e:
-                log.warning(f"向量检索失败: {e}")
+                log.error(f"向量检索失败: {e}")
                 
         # 2. 图谱检索 (关联挖掘)
         # 简单提取查询中的名词作为实体锚点
@@ -247,6 +277,12 @@ class MemoryManager:
                 
         # 去重
         return list(set(context_results))
+
+    def get_interest_areas(self, limit: int = 5) -> List[str]:
+        """
+        获取用户当前的兴趣领域（基于知识图谱的核心概念）
+        """
+        return self.graph_storage.get_central_concepts(limit)
  
     async def restore_with_summary(self, summarizer_func: Callable[[str], Any], recent_count: int = 20):
         """
@@ -290,84 +326,44 @@ class MemoryManager:
             # 2. 按时间排序
             history.sort(key=lambda x: x.timestamp)
             
-            # 3. 区分 "待摘要历史" 和 "近期活跃记忆"
+            # 3. 仿生分层记忆策略：仅加载近期活跃记忆 (Short-Term)
+            # 长期记忆 (Long-Term) 已存在于 VectorDB 中，按需检索，无需启动时全量摘要
+            
             total_count = len(history)
             
             if total_count <= recent_count:
                 # 数量较少，直接全部加载
-                self._short_term = history
-                log.info(f"已恢复 {total_count} 条记忆 (未触发摘要)")
+                self._short_term = self._truncate_history(history)
+                log.info(f"已恢复全量短期记忆 ({total_count} 条)")
             else:
-                # 需要摘要
-                to_summarize = history[:-recent_count]
+                # 仅保留最近 N 条，旧的丢弃（但在长期记忆/图谱中仍可被检索）
                 recent_history = history[-recent_count:]
+                self._short_term = self._truncate_history(recent_history)
                 
-                log.info(f"正在摘要 {len(to_summarize)} 条历史记忆...")
-                
-                try:
-                    summary_result = ""
-                    
-                    # 估算 Token 数量 (粗略按字符数/4)
-                    # 如果数据量过大，进行分块摘要
-                    # 假设每条消息平均 100 字符，50条约 5000 字符 ~ 1.2k tokens。安全起见 50-100 条一块。
-                    CHUNK_SIZE = 50 
-                    
-                    if len(to_summarize) > CHUNK_SIZE:
-                        log.info(f"历史数据量较大，启用分块摘要 (每块 {CHUNK_SIZE} 条)...")
-                        chunks = [to_summarize[i:i + CHUNK_SIZE] for i in range(0, len(to_summarize), CHUNK_SIZE)]
-                        
-                        partial_summaries = []
-                        for i, chunk in enumerate(chunks):
-                            chunk_text = "对话片段:\n"
-                            for turn in chunk:
-                                chunk_text += f"[{turn.role}] {turn.content}\n"
-                            
-                            log.info(f"正在摘要第 {i+1}/{len(chunks)} 块...")
-                            # 简单的重试机制
-                            try:
-                                partial = await summarizer_func(f"请简要总结以下对话片段的关键信息：\n{chunk_text}")
-                                partial_summaries.append(f"时间段 {i+1} 摘要: {partial}")
-                            except Exception as pe:
-                                log.warning(f"分块摘要失败 (块 {i+1}): {pe}")
-                        
-                        # 合并摘要
-                        combined_summary_text = "\n".join(partial_summaries)
-                        # 如果合并后的摘要依然很长，可以再次摘要，或者直接作为最终结果
-                        # 这里为了简化，直接再次摘要一次，将其整合成连贯的叙述
-                        log.info("正在生成最终聚合摘要...")
-                        try:
-                            summary_result = await summarizer_func(f"以下是按时间顺序排列的历史对话摘要片段，请将其整合成一份连贯的、包含关键用户偏好和重要事件的任务简报：\n\n{combined_summary_text}")
-                        except Exception as e:
-                            log.warning(f"聚合摘要失败，使用拼接结果: {e}")
-                            summary_result = combined_summary_text
+                log.info(f"仿生记忆加载: 仅恢复最近 {len(recent_history)} 条活跃记忆 (总历史 {total_count} 条)")
+                log.info("更早的记忆将通过 RAG (Vector + Graph) 按需检索，不再进行启动时全量摘要，提高效率。")
 
-                    else:
-                        # 数据量较小，一次性摘要
-                        summary_text_input = "以下是过往的对话历史，请总结关键信息、用户偏好和重要决策：\n\n"
-                        for turn in to_summarize:
-                            summary_text_input += f"[{turn.role}] {turn.content}\n"
-                        summary_result = await summarizer_func(summary_text_input)
-                    
-                    # 构建摘要消息 (System Role)
-                    summary_turn = ConversationTurn(
-                        role="system",
-                        content=f"【历史记忆摘要】\n{summary_result}",
-                        timestamp=datetime.now().isoformat(),
-                        metadata={"type": "memory_summary", "source_count": len(to_summarize)},
-                        importance=10.0
-                    )
-                    
-                    # 组合: 摘要 + 近期历史
-                    self._short_term = [summary_turn] + recent_history
-                    log.info(f"已恢复记忆: 1条摘要 ({len(to_summarize)}条原始记录) + {len(recent_history)}条近期记录")
-                    
-                except Exception as e:
-                    log.error(f"摘要生成失败，降级为截断加载: {e}")
-                    # 降级：仅加载近期记忆
-                    self._short_term = recent_history
-            
         except Exception as e:
-            log.error(f"恢复/摘要记忆失败: {e}")
+            log.error(f"恢复记忆失败: {e}")
+
+    def _truncate_history(self, history: List[ConversationTurn], max_chars: int = 20000) -> List[ConversationTurn]:
+        """截断过长的历史消息，防止 Context Overflow"""
+        truncated_history = []
+        for turn in history:
+            if len(turn.content) > max_chars:
+                log.warning(f"检测到超长历史消息 ({len(turn.content)} 字符)，正在截断...")
+                truncated_content = turn.content[:max_chars] + f"\n... [Content Truncated due to length {len(turn.content)} > {max_chars}]"
+                new_turn = ConversationTurn(
+                    role=turn.role,
+                    content=truncated_content,
+                    timestamp=turn.timestamp,
+                    metadata=turn.metadata,
+                    importance=turn.importance
+                )
+                truncated_history.append(new_turn)
+            else:
+                truncated_history.append(turn)
+        return truncated_history
 
     def restore_short_term_from_long_term(self):
         """从长期记忆恢复短期对话历史 (Deprecated: see restore_with_summary)"""

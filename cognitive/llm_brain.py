@@ -81,13 +81,20 @@ class LLMBrain:
             )
             self._model = self.config.nvidia_model
 
-        elif self.provider == LLMProvider.ZHIPU:
             self._client = AsyncOpenAI(
                 api_key=self.config.zhipu_api_key,
                 base_url=self.config.zhipu_base_url,
                 timeout=httpx.Timeout(self.config.request_timeout, connect=10.0),
             )
             self._model = self.config.zhipu_model
+            
+        elif self.provider == LLMProvider.GEMINI:
+            self._client = AsyncOpenAI(
+                api_key=self.config.gemini_api_key,
+                base_url=self.config.gemini_base_url,
+                timeout=httpx.Timeout(self.config.request_timeout, connect=10.0),
+            )
+            self._model = self.config.gemini_model
     
     async def chat(
         self,
@@ -130,14 +137,21 @@ class LLMBrain:
             }
             
             if message.tool_calls:
-                result["tool_calls"] = [
-                    {
+                tool_calls_list = []
+                for tc in message.tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        log.warning(f"工具 {tc.function.name} 参数解析失败 (可能是 JSON 截断): {tc.function.arguments}")
+                        # 尝试通过字符串修复或直接返回原始字符串
+                        args = tc.function.arguments
+                    
+                    tool_calls_list.append({
                         "id": tc.id,
                         "name": tc.function.name,
-                        "arguments": json.loads(tc.function.arguments),
-                    }
-                    for tc in message.tool_calls
-                ]
+                        "arguments": args,
+                    })
+                result["tool_calls"] = tool_calls_list
             
             return result
         
@@ -192,6 +206,7 @@ class LLMBrain:
             LLMProvider.OPENAI,
             LLMProvider.NVIDIA,
             LLMProvider.OLLAMA,
+            LLMProvider.GEMINI,
         ]
         providers = [p for p in fallback_order if p != self.provider]
         
@@ -230,14 +245,20 @@ class LLMBrain:
                 }
                 
                 if message.tool_calls:
-                    result["tool_calls"] = [
-                        {
+                    tool_calls_list = []
+                    for tc in message.tool_calls:
+                        try:
+                            args = json.loads(tc.function.arguments)
+                        except json.JSONDecodeError:
+                            log.warning(f"Fallback工具 {tc.function.name} 参数解析失败: {tc.function.arguments}")
+                            args = tc.function.arguments
+                        
+                        tool_calls_list.append({
                             "id": tc.id,
                             "name": tc.function.name,
-                            "arguments": json.loads(tc.function.arguments),
-                        }
-                        for tc in message.tool_calls
-                    ]
+                            "arguments": args,
+                        })
+                    result["tool_calls"] = tool_calls_list
                 
                 log.info(f"成功切换到 {fallback_provider.value}")
                 return result
@@ -263,6 +284,8 @@ class LLMBrain:
             return bool(self.config.nvidia_api_key)
         elif provider == LLMProvider.OLLAMA:
             return True  # Ollama 是本地服务
+        elif provider == LLMProvider.GEMINI:
+            return bool(self.config.gemini_api_key)
         return False
     
     async def chat_stream(

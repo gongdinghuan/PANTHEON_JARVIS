@@ -677,8 +677,19 @@ class SelfEvolutionEngine:
                        except:
                            pass
             
+            # Fallback strategy: If no results with strict task_type, try without it
+            if not experiences and task_type:
+                log.info(f"Strict search for task_type='{task_type}' yielded 0 results. Retrying with broad search.")
+                # Recursively call without task_type
+                return self.search_similar_experience(task_description, task_type=None, limit=limit)
+
             # 按相关性排序
-            experiences.sort(key=lambda x: x["score"])
+            experiences.sort(key=lambda x: x["score"], reverse=False) # Lower distance is better? Chroma default is L2? 
+            # Chroma default is usually L2 squared distance (smaller is better) or Cosine (larger is better). 
+            # But wait, results["distances"] depends on metric. Default is L2.
+            # Assuming default (L2), smaller is better.
+            
+            log.info(f"Found {len(experiences)} similar experiences for task '{task_type}'")
             return experiences[:limit]
             
         except Exception as e:
@@ -704,28 +715,8 @@ class SelfEvolutionEngine:
             return "检测到速率限制，建议等待一段时间后重试，或切换 API Key。"
         if "not found" in error_lower or "404" in error_lower:
             return "目标资源不存在，请检查 URL 或文件名是否正确。"
-            
-        return None
-
-    def analyze_failure(self, error: str, task_context: str) -> Optional[str]:
-        """
-        分析失败并寻找历史解决方案 (Reflexion)
-        
-        Args:
-            error: 错误信息
-            task_context: 任务上下文
-            
-        Returns:
-            建议的解决方案
-        """
-        # TODO: 暂时简单实现，未来可以检索 error 数据库
-        error_lower = error.lower()
-        if "timeout" in error_lower or "timed out" in error_lower:
-            return "建议增加超时时间或减少请求的数据量。"
-        if "rate limit" in error_lower or "429" in error_lower:
-            return "检测到速率限制，建议等待一段时间后重试，或切换 API Key。"
-        if "not found" in error_lower or "404" in error_lower:
-            return "目标资源不存在，请检查 URL 或文件名是否正确。"
+        if "context length" in error_lower or "token" in error_lower:
+             return "请求内容过长，请尝试减少输入数据量或使用分页/截断策略。"
             
         return None
         
