@@ -84,7 +84,7 @@ class SchedulerSkill(BaseSkill):
         self.planner = planner
         log.info("已注入 Planner，定时任务支持自然语言指令")
 
-    async def execute(self, action: str, **params) -> SkillResult:
+    async def execute(self, action: str = None, **params) -> SkillResult:
         """
         执行定时任务操作
         
@@ -92,6 +92,16 @@ class SchedulerSkill(BaseSkill):
             action: 操作类型
             **params: 操作参数
         """
+        # 兼容性处理：如果 action 为 None，尝试从 params 中获取
+        if not action:
+            action = params.get("action")
+            
+        if not action:
+            return SkillResult(
+                success=False,
+                output=None,
+                error="缺少必需参数: action"
+            )
         actions = {
             "create_task": self._create_task,
             "list_tasks": self._list_tasks,
@@ -431,7 +441,9 @@ class SchedulerSkill(BaseSkill):
         # 模式3: Shell 执行 (原有逻辑)
         try:
             import subprocess
-            result = subprocess.run(
+            # 使用 asyncio.to_thread 将阻塞的 subprocess.run 放入线程池执行
+            result = await asyncio.to_thread(
+                subprocess.run,
                 command,
                 shell=True,
                 capture_output=True,

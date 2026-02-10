@@ -33,7 +33,7 @@ class CodeInterpreterSkill(BaseSkill):
         'range', 'repr', 'reversed', 'round', 'set', 'slice', 'sorted', 'str',
         'sum', 'tuple', 'type', 'vars', 'zip',
         # 数学相关
-        'True', 'False', 'None',
+        'True', 'False', 'None', '__import__',
     }
     
     # 允许导入的模块

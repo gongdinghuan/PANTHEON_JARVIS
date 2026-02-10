@@ -1,0 +1,42 @@
+{
+  "learning_history": [
+    {
+      "timestamp": "2026-02-08T01:02:48.807697",
+      "method": "DCF",
+      "mastery_before": 0,
+      "mastery_after": 15
+    },
+    {
+      "timestamp": "2026-02-08T01:02:49.108803",
+      "method": "DDM",
+      "mastery_before": 0,
+      "mastery_after": 6
+    },
+    {
+      "timestamp": "2026-02-08T01:02:49.409118",
+      "method": "LBO",
+      "mastery_before": 0,
+      "mastery_after": 10
+    },
+    {
+      "timestamp": "2026-02-08T01:02:49.710205",
+      "method": "相对估值",
+      "mastery_before": 0,
+      "mastery_after": 12
+    },
+    {
+      "timestamp": "2026-02-08T01:02:50.010660",
+      "method": "期权定价",
+      "mastery_before": 0,
+      "mastery_after": 10
+    }
+  ],
+  "method_mastery": {
+    "DCF": 15,
+    "DDM": 6,
+    "LBO": 10,
+    "相对估值": 12,
+    "期权定价": 10
+  },
+  "last_update": "2026-02-08T01:02:50.311506"
+}

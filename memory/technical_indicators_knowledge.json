@@ -1,0 +1,1019 @@
+{
+  "date": "2026-02-07T23:59:41.489866",
+  "indicators": {
+    "SMA": {
+      "code": "SMA",
+      "name": "简单移动平均",
+      "category": "趋势",
+      "formula": "SMA = sum(close, n) / n",
+      "usage": "判断趋势方向，支撑/阻力",
+      "trading_signals": [
+        "价格上穿MA买入",
+        "价格下穿MA卖出",
+        "MA金叉买入",
+        "MA死叉卖出"
+      ],
+      "parameter_optimization": {
+        "short": 5,
+        "medium": 20,
+        "long": 60
+      },
+      "combination_strategies": [
+        "SMA + RSI",
+        "SMA + MACD",
+        "多周期SMA"
+      ]
+    },
+    "EMA": {
+      "code": "EMA",
+      "name": "指数移动平均",
+      "category": "趋势",
+      "formula": "EMA = close * k + EMA_prev * (1-k)",
+      "usage": "更快响应价格变化",
+      "trading_signals": [
+        "快线上穿慢线买入",
+        "快线下穿慢线卖出"
+      ],
+      "parameter_optimization": {
+        "short": 12,
+        "long": 26,
+        "signal": 9
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "WMA": {
+      "code": "WMA",
+      "name": "加权移动平均",
+      "category": "趋势",
+      "formula": "WMA = sum(close * weight) / sum(weight)",
+      "usage": "近期价格权重更高",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "HMA": {
+      "code": "HMA",
+      "name": "赫尔移动平均",
+      "category": "趋势",
+      "formula": "HMA = WMA(2*WMA(n/2) - WMA(n), sqrt(n))",
+      "usage": "低延迟平滑曲线",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "TEMA": {
+      "code": "TEMA",
+      "name": "三重指数移动平均",
+      "category": "趋势",
+      "formula": "TEMA = 3*EMA - 3*EMA(EMA) + EMA(EMA(EMA))",
+      "usage": "减少滞后",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "MACD": {
+      "code": "MACD",
+      "name": "指数平滑异同移动平均线",
+      "category": "趋势",
+      "formula": "MACD = EMA(12) - EMA(26), Signal = EMA(MACD, 9)",
+      "usage": "趋势跟踪和动量",
+      "trading_signals": [
+        "MACD上穿Signal买入",
+        "MACD下穿Signal卖出",
+        "柱状图由负转正买入"
+      ],
+      "parameter_optimization": {
+        "fast": 12,
+        "slow": 26,
+        "signal": 9
+      },
+      "combination_strategies": [
+        "MACD + RSI",
+        "MACD + KDJ",
+        "MACD + 成交量"
+      ]
+    },
+    "DMI": {
+      "code": "DMI",
+      "name": "趋向指标",
+      "category": "趋势",
+      "formula": "+DI/-DI, ADX",
+      "usage": "判断趋势强度",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "ADX": {
+      "code": "ADX",
+      "name": "平均趋向指数",
+      "category": "趋势",
+      "formula": "ADX = MA(DX, 14)",
+      "usage": "趋势强度>25为强趋势",
+      "trading_signals": [
+        "ADX>25趋势形成",
+        "ADX<20震荡市场"
+      ],
+      "parameter_optimization": {
+        "period": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Parabolic_SAR": {
+      "code": "Parabolic_SAR",
+      "name": "抛物线转向",
+      "category": "趋势",
+      "formula": "SAR = SAR_prev + AF * (EP - SAR_prev)",
+      "usage": "跟踪止损，趋势反转",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Ichimoku": {
+      "code": "Ichimoku",
+      "name": "一目均衡表",
+      "category": "趋势",
+      "formula": "Tenkan/Kijun/Senkou/Chikou",
+      "usage": "综合趋势分析",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "TRIX": {
+      "code": "TRIX",
+      "name": "三重指数平滑",
+      "category": "趋势",
+      "formula": "TRIX = EMA(EMA(EMA(ln(close))))",
+      "usage": "过滤噪音",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "KST": {
+      "code": "KST",
+      "name": "确然指标",
+      "category": "趋势",
+      "formula": "KST = sum(RC * weight)",
+      "usage": "多周期趋势确认",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "VWAP": {
+      "code": "VWAP",
+      "name": "成交量加权平均价",
+      "category": "趋势",
+      "formula": "VWAP = sum(price*volume) / sum(volume)",
+      "usage": "机构参考价",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Mass_Index": {
+      "code": "Mass_Index",
+      "name": "质量指数",
+      "category": "趋势",
+      "formula": "MI = sum(EMA(H-L,9)/EMA(EMA(H-L,9),9))",
+      "usage": "趋势反转预警",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Vortex": {
+      "code": "Vortex",
+      "name": "漩涡指标",
+      "category": "趋势",
+      "formula": "VI+/VI-",
+      "usage": "趋势变化识别",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "RSI": {
+      "code": "RSI",
+      "name": "相对强弱指标",
+      "category": "动量",
+      "formula": "RSI = 100 - 100/(1+RS)",
+      "usage": "超买>70, 超卖<30",
+      "trading_signals": [
+        "RSI<30超卖买入",
+        "RSI>70超买卖出",
+        "RSI背离信号"
+      ],
+      "parameter_optimization": {
+        "period": 14,
+        "overbought": 70,
+        "oversold": 30
+      },
+      "combination_strategies": [
+        "RSI + 布林带",
+        "RSI + 成交量",
+        "RSI背离"
+      ]
+    },
+    "Stochastic": {
+      "code": "Stochastic",
+      "name": "随机振荡器",
+      "category": "动量",
+      "formula": "%K = 100*(close-L5)/(H5-L5)",
+      "usage": "超买超卖信号",
+      "trading_signals": [
+        "%K>%D买入",
+        "%K<%D卖出"
+      ],
+      "parameter_optimization": {
+        "k_period": 14,
+        "d_period": 3,
+        "smooth": 3
+      },
+      "combination_strategies": [
+        "KDJ + RSI",
+        "KDJ + MACD",
+        "多周期KDJ"
+      ]
+    },
+    "Williams_R": {
+      "code": "Williams_R",
+      "name": "威廉指标",
+      "category": "动量",
+      "formula": "%R = -100*(Hn - close)/(Hn - Ln)",
+      "usage": "超买>-20, 超卖<-80",
+      "trading_signals": [
+        "%R>-20超买",
+        "%R<-80超卖"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "CCI": {
+      "code": "CCI",
+      "name": "商品通道指数",
+      "category": "动量",
+      "formula": "CCI = (TP - MA(TP)) / (0.015 * MD)",
+      "usage": "周期性买卖点",
+      "trading_signals": [
+        "CCI>+100超买",
+        "CCI<-100超卖"
+      ],
+      "parameter_optimization": {
+        "period": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Momentum": {
+      "code": "Momentum",
+      "name": "动量指标",
+      "category": "动量",
+      "formula": "M = close - close_n",
+      "usage": "价格变化速度",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "ROC": {
+      "code": "ROC",
+      "name": "变动率指标",
+      "category": "动量",
+      "formula": "ROC = (close - close_n) / close_n * 100",
+      "usage": "变化率测量",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "BIAS": {
+      "code": "BIAS",
+      "name": "乖离率",
+      "category": "动量",
+      "formula": "BIAS = (close - MA) / MA * 100",
+      "usage": "偏离均线程度",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "DPO": {
+      "code": "DPO",
+      "name": "去趋势价格振荡器",
+      "category": "动量",
+      "formula": "DPO = close - MA((n/2)+1)",
+      "usage": "去除趋势，看周期性",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Ultimate_Oscillator": {
+      "code": "Ultimate_Oscillator",
+      "name": "终极振荡器",
+      "category": "动量",
+      "formula": "UO = 100*BP/TR_weighted",
+      "usage": "多周期动量确认",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "StochRSI": {
+      "code": "StochRSI",
+      "name": "随机RSI",
+      "category": "动量",
+      "formula": "StochRSI = (RSI - min_RSI) / (max_RSI - min_RSI)",
+      "usage": "RSI的振荡器版本",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "KDJ": {
+      "code": "KDJ",
+      "name": "随机指标KDJ",
+      "category": "动量",
+      "formula": "K, D, J = Stochastic variant",
+      "usage": "超买超卖判断",
+      "trading_signals": [
+        "K>D买入",
+        "K<D卖出",
+        "J>100超买"
+      ],
+      "parameter_optimization": {
+        "k": 9,
+        "d": 3,
+        "j": 3
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Force_Index": {
+      "code": "Force_Index",
+      "name": "强力指数",
+      "category": "动量",
+      "formula": "FI = (close-close_prev)*volume",
+      "usage": "买卖力度",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Bollinger_Bands": {
+      "code": "Bollinger_Bands",
+      "name": "布林带",
+      "category": "波动率",
+      "formula": "Middle = SMA(20), Upper = +2*SD, Lower = -2*SD",
+      "usage": "波动范围和突破",
+      "trading_signals": [
+        "价格触及下轨买入",
+        "价格突破上轨卖出",
+        "带宽收缩预示突破"
+      ],
+      "parameter_optimization": {
+        "period": 20,
+        "std": 2
+      },
+      "combination_strategies": [
+        "布林带 + RSI",
+        "布林带 + MACD",
+        "布林带带宽"
+      ]
+    },
+    "ATR": {
+      "code": "ATR",
+      "name": "平均真实波幅",
+      "category": "波动率",
+      "formula": "ATR = MA(TR, 14)",
+      "usage": "市场波动性测量",
+      "trading_signals": [
+        "ATR高位设止损",
+        "ATR突破预示趋势"
+      ],
+      "parameter_optimization": {
+        "period": 14
+      },
+      "combination_strategies": [
+        "ATR + 仓位大小",
+        "ATR + 止损",
+        "ATR + 趋势"
+      ]
+    },
+    "Keltner_Channel": {
+      "code": "Keltner_Channel",
+      "name": "肯特纳通道",
+      "category": "波动率",
+      "formula": "KC = EMA +/- 2*ATR",
+      "usage": "趋势通道",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "ema": 20,
+        "atr": 2
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Donchian_Channel": {
+      "code": "Donchian_Channel",
+      "name": "唐奇安通道",
+      "category": "波动率",
+      "formula": "Upper = max(H, n), Lower = min(L, n)",
+      "usage": "突破策略",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Standard_Deviation": {
+      "code": "Standard_Deviation",
+      "name": "标准差",
+      "category": "波动率",
+      "formula": "SD = sqrt(sum((x - MA)^2) / n)",
+      "usage": "波动率测量",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Historical_Volatility": {
+      "code": "Historical_Volatility",
+      "name": "历史波动率",
+      "category": "波动率",
+      "formula": "HV = SD(ln(close/close_1)) * sqrt(252)",
+      "usage": "年化波动率",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Chaikin_Volatility": {
+      "code": "Chaikin_Volatility",
+      "name": "蔡金波动率",
+      "category": "波动率",
+      "formula": "CV = (H-L-EMA(H-L))/EMA(H-L)",
+      "usage": "波动率变化",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Price_Channel": {
+      "code": "Price_Channel",
+      "name": "价格通道",
+      "category": "波动率",
+      "formula": "Upper=Hn, Lower=Ln",
+      "usage": "支撑阻力",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "OBV": {
+      "code": "OBV",
+      "name": "能量潮",
+      "category": "成交量",
+      "formula": "OBV = OBV_prev + sign(close-close_prev)*volume",
+      "usage": "资金流向",
+      "trading_signals": [
+        "OBV创新高买入",
+        "OBV背离预警"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Volume_MA": {
+      "code": "Volume_MA",
+      "name": "成交量移动平均",
+      "category": "成交量",
+      "formula": "VMA = MA(volume, n)",
+      "usage": "成交量趋势",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Volume_Rate": {
+      "code": "Volume_Rate",
+      "name": "量比",
+      "category": "成交量",
+      "formula": "VR = volume_current / volume_average_5day",
+      "usage": "活跃度",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "AD": {
+      "code": "AD",
+      "name": "累积/派发线",
+      "category": "成交量",
+      "formula": "AD = AD_prev + MF*volume",
+      "usage": "买卖压力",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Chaikin_MF": {
+      "code": "Chaikin_MF",
+      "name": "蔡金资金流量",
+      "category": "成交量",
+      "formula": "CMF = sum(MF*volume) / sum(volume)",
+      "usage": "21天资金流向",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "MFI": {
+      "code": "MFI",
+      "name": "资金流量指标",
+      "category": "成交量",
+      "formula": "MFI = 100 - 100/(1+money_flow_ratio)",
+      "usage": "成交量的RSI",
+      "trading_signals": [
+        "MFI>80超买",
+        "MFI<20超卖"
+      ],
+      "parameter_optimization": {
+        "period": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "PVI": {
+      "code": "PVI",
+      "name": "正量指标",
+      "category": "成交量",
+      "formula": "PVI = PVI_prev * (close/close_prev) if vol>vol_prev",
+      "usage": "聪明钱追踪",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "NVI": {
+      "code": "NVI",
+      "name": "负量指标",
+      "category": "成交量",
+      "formula": "NVI = NVI_prev * (close/close_prev) if vol<vol_prev",
+      "usage": "散户钱追踪",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Ease_of_Movement": {
+      "code": "Ease_of_Movement",
+      "name": "移动便利指标",
+      "category": "成交量",
+      "formula": "EMV = (H+L)/2 - (H_prev+L_prev)/2 / volume/HL",
+      "usage": "价格+成交量",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Volume_Oscillator": {
+      "code": "Volume_Oscillator",
+      "name": "成交量振荡器",
+      "category": "成交量",
+      "formula": "VO = (fast_MA - slow_MA) / slow_MA",
+      "usage": "成交量变化",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Pivot_Points": {
+      "code": "Pivot_Points",
+      "name": "枢轴点",
+      "category": "支撑阻力",
+      "formula": "P = (H+L+C)/3, R1=2*P-L, S1=2*P-H",
+      "usage": "日内关键价位",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Fibonacci": {
+      "code": "Fibonacci",
+      "name": "斐波那契回调",
+      "category": "支撑阻力",
+      "formula": "23.6%, 38.2%, 50%, 61.8%",
+      "usage": "回调支撑位",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Woodie_Pivot": {
+      "code": "Woodie_Pivot",
+      "name": "伍迪枢轴点",
+      "category": "支撑阻力",
+      "formula": "P = (H+L+2*open)/4",
+      "usage": "替代枢轴点",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Camarilla": {
+      "code": "Camarilla",
+      "name": "卡玛利拉方程",
+      "category": "支撑阻力",
+      "formula": "R3=H-L*(1.1/4), S3=L+H-L*(1.1/4)",
+      "usage": "日内支撑阻力",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "DeMark_Pivot": {
+      "code": "DeMark_Pivot",
+      "name": "DeMark枢轴点",
+      "category": "支撑阻力",
+      "formula": "特定公式",
+      "usage": "预测支撑阻力",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Trend_Lines": {
+      "code": "Trend_Lines",
+      "name": "趋势线",
+      "category": "支撑阻力",
+      "formula": "连接高点或低点",
+      "usage": "支撑阻力识别",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Andrews_Pitchfork": {
+      "code": "Andrews_Pitchfork",
+      "name": "安德鲁斯叉",
+      "category": "支撑阻力",
+      "formula": "中线+上下通道",
+      "usage": "价格通道",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Fibonacci_Extensions": {
+      "code": "Fibonacci_Extensions",
+      "name": "斐波那契扩展",
+      "category": "支撑阻力",
+      "formula": "127.2%, 161.8%",
+      "usage": "目标价位",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "AD_Line": {
+      "code": "AD_Line",
+      "name": "涨跌线",
+      "category": "市场广度",
+      "formula": "ADL = ADL_prev + (advancing_issues - declining)",
+      "usage": "市场 breadth",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Arms_Index": {
+      "code": "Arms_Index",
+      "name": "TRIN",
+      "category": "市场广度",
+      "formula": "TRIN = (adv/decl)/(vol_adv/vol_decl)",
+      "usage": "市场情绪",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "McClellan": {
+      "code": "McClellan",
+      "name": "麦克莱伦振荡器",
+      "category": "市场广度",
+      "formula": "MC = EMA19(RA) - EMA39(RA)",
+      "usage": "市场趋势",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "New_Highs_Lows": {
+      "code": "New_Highs_Lows",
+      "name": "新高新低",
+      "category": "市场广度",
+      "formula": "NHL = new_highs - new_lows",
+      "usage": "市场强弱",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Bullish_Percent": {
+      "code": "Bullish_Percent",
+      "name": "看涨百分比",
+      "category": "市场广度",
+      "formula": "BP = (point_and_figure_buy / total_stocks) * 100",
+      "usage": "市场情绪",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Advance_Decline_Ratio": {
+      "code": "Advance_Decline_Ratio",
+      "name": "涨跌比率",
+      "category": "市场广度",
+      "formula": "ADR = advancing / declining",
+      "usage": "广度测量",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    },
+    "Tick_Index": {
+      "code": "Tick_Index",
+      "name": "跳动指数",
+      "category": "市场广度",
+      "formula": "Tick = upticking - downticking_stocks",
+      "usage": "短期情绪",
+      "trading_signals": [
+        "常规信号分析"
+      ],
+      "parameter_optimization": {
+        "default": 14
+      },
+      "combination_strategies": [
+        "单独使用或与其他指标组合"
+      ]
+    }
+  },
+  "total_count": 60,
+  "categories": {
+    "趋势": 15,
+    "动量": 12,
+    "波动率": 8,
+    "成交量": 10,
+    "支撑阻力": 8,
+    "市场广度": 7
+  }
+}

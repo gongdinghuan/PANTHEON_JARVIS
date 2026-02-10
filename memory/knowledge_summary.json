@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-02-08T03:05:18.798784",
+  "summary": {
+    "nodes": 8,
+    "edges": 0,
+    "categories": {
+      "data_science": 5,
+      "trading": 2,
+      "investment": 1
+    },
+    "avg_mastery": 0.5,
+    "high_mastery": 0,
+    "review_needed": 0
+  },
+  "reviews": [
+    {
+      "title": "Data Processing - multiindex",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Data Processing - groupby",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Data Processing - timeseries",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Data Processing - performance",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Data Processing - advanced_manipulation",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Technical Indicators",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Portfolio Optimization",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    },
+    {
+      "title": "Risk Management",
+      "mastery": 0.5,
+      "days": 1,
+      "priority": "HIGH"
+    }
+  ]
+}

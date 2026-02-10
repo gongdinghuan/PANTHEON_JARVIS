@@ -1,0 +1,229 @@
+{
+  "version": "1.0",
+  "updated": "2026-02-08T03:05:18.795851",
+  "nodes": [
+    {
+      "id": "a969320a7295",
+      "title": "Data Processing - multiindex",
+      "category": "data_science",
+      "description": "Pandas operations for multiindex",
+      "concepts": [
+        "MultiIndex创建: from_arrays, from_tuples, from_product",
+        "层级选择: .loc[], .xs()方法",
+        "层级操作: swaplevel, reorder_levels交换和重排序",
+        "数据重塑: stack(), unstack()堆叠和展开",
+        "跨层级聚合: groupby(level=...)按层级聚合"
+      ],
+      "skills": [
+        "index = pd.MultiIndex.from_arrays(arrays, names=[\"Quarter\", \"Sector\"])",
+        "df.loc[\"2024-Q1\"] - 选择特定层级",
+        "df.xs((\"Q1\", \"Tech\"), level=[\"Quarter\", \"Sector\"]) - 交叉选择",
+        "df.unstack(\"Region\") - 将Region转为列",
+        "df.groupby(level=\"Quarter\").sum() - 按季度聚合"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "4c70d3efb111",
+      "title": "Data Processing - groupby",
+      "category": "data_science",
+      "description": "Pandas operations for groupby",
+      "concepts": [
+        "多级聚合: agg({列: [函数列表]})对不同列应用不同函数",
+        "自定义聚合: 将自定义函数作为agg参数使用",
+        "Transform操作: 保持原DataFrame形状,计算组统计",
+        "Apply操作: 对每个分组应用复杂自定义函数",
+        "Filter操作: 筛选符合条件的整组数据",
+        "多级GroupBy: groupby([列1, 列2])多列分组"
+      ],
+      "skills": [
+        "聚合后扁平化: as_index=False避免多级索引",
+        "分组命名: named aggregation命名聚合列",
+        "分组迭代: for name, group in df.groupby()遍历分组",
+        "分组百分位: transform(lambda x: x.quantile(0.8))计算组内百分位",
+        "df.groupby(\"Category\").agg({\"Value\": [\"sum\", \"mean\"], \"Volume\": \"sum\"})",
+        "df.groupby(\"Category\")[\"Value\"].agg([(\"Total\", \"sum\"), (\"Range\", lambda x: x.max()-x.min())])",
+        "df[\"GroupMean\"] = df.groupby(\"Category\")[\"Value\"].transform(\"mean\")",
+        "df.groupby(\"Category\").apply(lambda x: x.sort_values(\"Value\").head(3))",
+        "df.groupby(\"Category\").filter(lambda x: x[\"Value\"].sum() > 1000)"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "db2ea69bc728",
+      "title": "Data Processing - timeseries",
+      "category": "data_science",
+      "description": "Pandas operations for timeseries",
+      "concepts": [
+        "重采样: resample()改变时间频率(D/W/M/Q/Y)",
+        "滚动窗口: rolling()固定大小窗口统计",
+        "扩展窗口: expanding()累积窗口统计",
+        "时间移位: shift()滞后,lead()领先",
+        "时间差: diff()计算差值,pct_change()计算变化率",
+        "时间特征: dt属性提取年月日星期等"
+      ],
+      "skills": [
+        "df.resample(\"W\").sum() - 按周重采样求和",
+        "df.resample(\"M\").mean() - 按月重采样平均",
+        "df[\"MA7\"] = df[\"Price\"].rolling(7).mean() - 7日移动平均",
+        "df[\"CumMax\"] = df[\"Price\"].expanding().max() - 累积最大值",
+        "df[\"Lag7\"] = df[\"Price\"].shift(7) - 7日滞后",
+        "df[\"Return\"] = df[\"Price\"].pct_change() - 计算收益率",
+        "df[\"Year\"] = df.index.dt.year - 提取年份",
+        "df[\"Month\"] = df.index.dt.month - 提取月份",
+        "df[\"DayOfWeek\"] = df.index.dt.dayofweek - 提取星期"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "ad6b2d4d7d32",
+      "title": "Data Processing - performance",
+      "category": "data_science",
+      "description": "Pandas operations for performance",
+      "concepts": [
+        "数据类型降级: downcast参数减少内存占用",
+        "Category类型: 低基数字符串列转category节省内存",
+        "向量化操作: 使用矢量化替代循环提速",
+        "eval/query: 复杂条件筛选的优化方法",
+        "避免iterrows: 使用向量化或itertuples()替代"
+      ],
+      "skills": [
+        "df[\"Value\"] = pd.to_numeric(df[\"Value\"], downcast=\"integer\")",
+        "df[\"Category\"] = df[\"Category\"].astype(\"category\")",
+        "result = df.eval(\"A + B - C\")",
+        "filtered = df.query(\"A > 50 and B < 100\")",
+        "df[\"New\"] = df[\"A\"] * 2  # 向量化替代循环"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "d9a98be4e644",
+      "title": "Data Processing - advanced_manipulation",
+      "category": "data_science",
+      "description": "Pandas operations for advanced_manipulation",
+      "concepts": [
+        "数据透视表: pivot_table()多维数据汇总",
+        "交叉表: crosstab()交叉频数统计",
+        "数据合并: merge()数据库风格连接",
+        "轴向拼接: concat()沿轴拼接数据",
+        "数据堆叠: stack()/unstack()重塑",
+        "宽表转长表: melt()"
+      ],
+      "skills": [
+        "pd.pivot_table(df, values=\"Sales\", index=\"Product\", columns=\"Region\", aggfunc=\"sum\")",
+        "pd.crosstab(df[\"Product\"], df[\"Region\"], margins=True)",
+        "pd.merge(df1, df2, on=\"Key\", how=\"left\")",
+        "pd.concat([df1, df2], axis=0) - 纵向拼接",
+        "pd.concat([df1, df2], axis=1) - 横向拼接",
+        "df.melt(id_vars=[\"ID\"], value_vars=[\"A\", \"B\"])"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "086edb447ede",
+      "title": "Technical Indicators",
+      "category": "trading",
+      "description": "Financial analysis: Technical Indicators",
+      "concepts": [
+        "MA",
+        "EMA",
+        "MACD",
+        "RSI",
+        "Bollinger Bands",
+        "ATR"
+      ],
+      "skills": [
+        "Calculate indicators",
+        "Generate signals",
+        "Backtest strategies"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "ce64af33d01c",
+      "title": "Portfolio Optimization",
+      "category": "investment",
+      "description": "Financial analysis: Portfolio Optimization",
+      "concepts": [
+        "Mean-Variance",
+        "Efficient Frontier",
+        "CAPM",
+        "Risk Parity"
+      ],
+      "skills": [
+        "Optimize weights",
+        "Calculate risk-return",
+        "Factor analysis"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    },
+    {
+      "id": "7228bb53bb78",
+      "title": "Risk Management",
+      "category": "trading",
+      "description": "Financial analysis: Risk Management",
+      "concepts": [
+        "VaR",
+        "CVaR",
+        "Drawdown",
+        "Position Sizing",
+        "Stop Loss"
+      ],
+      "skills": [
+        "Calculate VaR",
+        "Monitor drawdown",
+        "Set position sizes"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-08T03:05:18.795851",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-08T03:05:18.795851"
+    }
+  ],
+  "edges": [],
+  "categories": {
+    "data_science": [
+      "d9a98be4e644",
+      "ad6b2d4d7d32",
+      "a969320a7295",
+      "db2ea69bc728",
+      "4c70d3efb111"
+    ],
+    "trading": [
+      "086edb447ede",
+      "7228bb53bb78"
+    ],
+    "investment": [
+      "ce64af33d01c"
+    ]
+  }
+}

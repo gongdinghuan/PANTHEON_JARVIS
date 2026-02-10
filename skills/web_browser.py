@@ -17,6 +17,7 @@ from skills.base_skill import BaseSkill, SkillResult, PermissionLevel, create_to
 from config import get_config, SearchProvider
 from utils.logger import log
 from utils.platform_utils import open_url_in_browser
+from utils.tools_search import InformationRetrieval
 
 try:
     from googlesearch import search as google_search
@@ -170,63 +171,7 @@ class BaiduSearcher(BaseSearchEngine):
         await self._client.aclose()
 
 
-class DuckDuckGoSearcher(BaseSearchEngine):
-    """DuckDuckGo 搜索引擎（作为备选）"""
-    
-    def __init__(self, timeout: int = 30):
-        super().__init__(timeout)
-        
-        # 尝试导入 ddgs 包
-        try:
-            from ddgs import DDGS
-            self.DDGS = DDGS
-            self.version = "new"
-            self.available = True
-        except ImportError:
-            try:
-                from duckduckgo_search import DDGS
-                self.DDGS = DDGS
-                self.version = "old"
-                self.available = True
-            except ImportError:
-                self.available = False
-                self.version = None
-    
-    async def search(self, query: str, max_results: int = 10) -> List[Dict[str, str]]:
-        """使用 DuckDuckGo 搜索"""
-        if not self.available:
-            log.warning("DuckDuckGo 不可用，已安装 ddgs/duckduckgo-search 库才能使用")
-            return []
-        
-        log.info(f"使用 DuckDuckGo 搜索: {query} (版本: {self.version})")
-        
-        try:
-            if self.version == "new":
-                ddgs = self.DDGS()
-                raw_results = []
-                for result in ddgs.text(query, max_results=max_results):
-                    raw_results.append(result)
-            else:
-                with self.DDGS() as ddgs:
-                    raw_results = list(ddgs.text(query, max_results=max_results))
-            
-            results = []
-            for r in raw_results:
-                url = r.get("link") or r.get("href", "")
-                body = r.get("body") or r.get("snippet", "")
-                
-                results.append({
-                    "title": r.get("title", ""),
-                    "url": url,
-                    "snippet": body
-                })
-            
-            log.info(f"DuckDuckGo 搜索返回 {len(results)} 条结果")
-            return results
-            
-        except Exception as e:
-            log.error(f"DuckDuckGo 搜索失败: {e}")
-            return []
+
 
 
 
@@ -273,7 +218,7 @@ class WebBrowserSkill(BaseSkill):
     """网页浏览技能"""
     
     name = "web_browser"
-    description = "网页浏览：搜索信息、读取网页内容、打开URL"
+    description = "网页浏览：搜索信息（推荐：查代码/教程用 Tavily，查事实/链接用 Brave）、读取网页内容、打开URL"
     permission_level = PermissionLevel.READ_ONLY
     
     def __init__(self):
@@ -283,7 +228,7 @@ class WebBrowserSkill(BaseSkill):
         self.config = get_config().web
         
         # 创建搜索引擎实例
-        self._search_engine = self._create_search_engine()
+        self._search_engine = InformationRetrieval()
         
         # HTTP 客户端（用于其他操作）
         self._client = httpx.AsyncClient(
@@ -327,27 +272,17 @@ class WebBrowserSkill(BaseSkill):
             log.error(f"网页操作失败: {action}, 错误: {e}")
             return SkillResult(success=False, output=None, error=str(e))
     
-    async def _search(self, query: str, max_results: int = 5) -> SkillResult:
+    async def _search(self, query: str, max_results: int = 5, engine: str = "auto") -> SkillResult:
         """搜索信息"""
-        log.info(f"执行搜索: {query}")
+        log.info(f"执行搜索: {query} (引擎: {engine})")
         
         try:
-            results = await self._search_engine.search(query, max_results=max_results)
-            
-            if not results:
-                return SkillResult(
-                    success=True,
-                    output={"message": "未找到相关结果", "results": []}
-                )
+            # InformationRetrieval.run returns a string
+            result_str = self._search_engine.run(query, engine=engine)
             
             return SkillResult(
                 success=True,
-                output={
-                    "query": query,
-                    "count": len(results),
-                    "results": results,
-                    "engine": self.config.search_provider.value
-                }
+                output=result_str
             )
             
         except Exception as e:
@@ -442,6 +377,11 @@ class WebBrowserSkill(BaseSkill):
                 "max_results": {
                     "type": "integer",
                     "description": "最大结果数量（用于 search）"
+                },
+                "engine": {
+                    "type": "string",
+                    "enum": ["auto", "tavily", "brave", "duckduckgo"],
+                    "description": "搜索引擎选择：'auto' (智能), 'tavily' (深度), 'brave' (快速), 'duckduckgo' (备用)"
                 }
             },
             required=["action"]

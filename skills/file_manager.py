@@ -72,8 +72,8 @@ class FileManagerSkill(BaseSkill):
             log.error(f"文件操作失败: {action}, 错误: {e}")
             return SkillResult(success=False, output=None, error=str(e))
     
-    async def _read_file(self, path: str, encoding: str = "utf-8") -> SkillResult:
-        """读取文件内容"""
+    async def _read_file(self, path: str, encoding: str = "utf-8", offset: int = 0, length: int = 50000) -> SkillResult:
+        """读取文件内容 (支持分页)"""
         if not self._is_path_safe(path):
             return SkillResult(success=False, output=None, error="访问被拒绝：路径不在安全范围内")
         
@@ -85,16 +85,38 @@ class FileManagerSkill(BaseSkill):
         if not path_obj.is_file():
             return SkillResult(success=False, output=None, error=f"不是文件: {path}")
         
-        # 限制文件大小
-        if path_obj.stat().st_size > 1024 * 1024:  # 1MB
-            return SkillResult(success=False, output=None, error="文件过大（超过 1MB）")
+        file_size = path_obj.stat().st_size
         
+        # 限制单次读取长度
+        if length > 100000: # Max 100KB per read
+            length = 100000
+            
         try:
-            content = path_obj.read_text(encoding=encoding)
-            log.info(f"读取文件: {path}, 大小: {len(content)} 字符")
-            return SkillResult(success=True, output=content)
-        except UnicodeDecodeError:
-            return SkillResult(success=False, output=None, error="无法解码文件，可能是二进制文件")
+            with open(path_obj, 'r', encoding=encoding, errors='replace') as f:
+                f.seek(offset)
+                content = f.read(length)
+                
+            read_len = len(content)
+            has_more = (offset + read_len) < file_size
+            
+            log.info(f"读取文件: {path}, 偏移: {offset}, 读取: {read_len}/{file_size} 字符")
+            
+            output_msg = content
+            if has_more:
+                output_msg += f"\n... [Truncated. File size: {file_size}, Read: {read_len}. Use offset={offset+read_len} to read more]"
+                
+            return SkillResult(
+                success=True, 
+                output=output_msg,
+                metadata={
+                    "file_size": file_size,
+                    "offset": offset,
+                    "read_length": read_len,
+                    "has_more": has_more
+                }
+            )
+        except Exception as e:
+            return SkillResult(success=False, output=None, error=f"读取文件失败: {str(e)}")
     
     async def _write_file(self, path: str, content: str, encoding: str = "utf-8") -> SkillResult:
         """写入文件"""
@@ -135,7 +157,7 @@ class FileManagerSkill(BaseSkill):
         except Exception as e:
             return SkillResult(success=False, output=None, error=str(e))
     
-    async def _list_directory(self, path: str, pattern: str = "*", detail: bool = False) -> SkillResult:
+    async def _list_directory(self, path: str, pattern: str = "*", detail: bool = False, recursive: bool = False, **kwargs) -> SkillResult:
         """列出目录内容"""
         if not self._is_path_safe(path):
             return SkillResult(success=False, output=None, error="访问被拒绝：路径不在安全范围内")
@@ -368,6 +390,14 @@ class FileManagerSkill(BaseSkill):
                 "path": {
                     "type": "string",
                     "description": "文件或目录路径"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "读取文件的起始偏移量 (用于分页读取大文件)"
+                },
+                "length": {
+                    "type": "integer",
+                    "description": "读取文件的长度 (默认 50000, 最大 100000)"
                 },
                 "content": {
                     "type": "string",

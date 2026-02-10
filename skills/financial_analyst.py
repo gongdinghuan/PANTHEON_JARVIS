@@ -139,10 +139,14 @@ class FinancialAnalystSkill(BaseSkill):
         
         return SkillResult(success=True, output=data, visualization=viz)
 
-    async def _search_news(self, query: str, num_results: int = 5) -> SkillResult:
+    async def _search_news(self, query: Optional[str] = None, symbol: Optional[str] = None, num_results: int = 5) -> SkillResult:
         """搜索金融新闻 (Google)"""
         try:
-            return await to_thread(self._sync_search_news, query, num_results)
+            if not query and not symbol:
+                return SkillResult(False, None, error="必须提供 query 或 symbol")
+                
+            real_query = query if query else f"{symbol} stock news"
+            return await to_thread(self._sync_search_news, real_query, num_results)
         except Exception as e:
             return SkillResult(success=False, output=None, error=f"搜索新闻失败: {e}")
 

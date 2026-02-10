@@ -36,30 +36,28 @@ class BackgroundTaskSkill(BaseSkill):
             return SkillResult(success=False, output=None, error=f"未知的操作: {action}")
         
         try:
-            # 这里的子方法改为同步运行，因为它们是在后台线程池中执行的
-            # 我们通过 asyncio.to_thread 或者直接调用 (因为 TaskManager 已经在线程池中运行我们了)
-            # 但为了兼容 BaseSkill execute 是 async 的签名，我们在这里直接调用同步方法
-            # 如果是在主线程调用，这将阻塞主线程（不推荐）。但因为是 background_task，预期必须在后台运行。
-            
-            # 关键修复: 不再使用 await，因为子方法改为 sync
-            result = actions[action](**params)
+            # 异步调用子方法
+            if asyncio.iscoroutinefunction(actions[action]):
+                result = await actions[action](**params)
+            else:
+                result = actions[action](**params)
             return result
         except Exception as e:
             log.error(f"后台任务失败: {action}, 错误: {e}")
             return SkillResult(success=False, output=None, error=str(e))
     
-    def _long_running_task(
+    async def _long_running_task(
         self,
         duration: int = 10,
         name: str = "长时间任务",
         **kwargs
     ) -> SkillResult:
-        """模拟长时间运行的任务 (Sync Version)"""
+        """模拟长时间运行的任务 (Async Version)"""
         log.info(f"开始执行长时间任务: {name}, 预计 {duration} 秒")
         
         total_steps = duration
         for i in range(total_steps):
-            time.sleep(1)
+            await asyncio.sleep(1)
             progress = (i + 1) / total_steps
             self.update_progress(progress)
             log.debug(f"任务进度: {progress * 100:.1f}%")
@@ -76,17 +74,17 @@ class BackgroundTaskSkill(BaseSkill):
             is_background=True
         )
     
-    def _countdown(
+    async def _countdown(
         self,
         seconds: int = 5,
         message: str = "倒计时",
         **kwargs
     ) -> SkillResult:
-        """倒计时任务 (Sync Version)"""
+        """倒计时任务 (Async Version)"""
         log.info(f"开始倒计时: {message}, {seconds} 秒")
         
         for i in range(seconds, 0, -1):
-            time.sleep(1)
+            await asyncio.sleep(1)
             progress = 1 - (i / seconds)
             self.update_progress(progress)
             log.debug(f"{message} 剩余: {i} 秒")
@@ -102,21 +100,21 @@ class BackgroundTaskSkill(BaseSkill):
             is_background=True
         )
     
-    def _simulate_download(
+    async def _simulate_download(
         self,
         filename: str = "example.txt",
         size_mb: int = 100,
         speed_mbps: int = 10,
         **kwargs
     ) -> SkillResult:
-        """模拟文件下载 (Sync Version)"""
+        """模拟文件下载 (Async Version)"""
         log.info(f"开始模拟下载: {filename}, 大小: {size_mb}MB, 速度: {speed_mbps}MB/s")
         
-        total_chunks = size_mb * 10
+        total_chunks = int(size_mb * 10) # 确保是整数
         downloaded_mb = 0
         
         for i in range(total_chunks):
-            time.sleep(0.1)  # 模拟下载延迟
+            await asyncio.sleep(0.1)  # 模拟下载延迟
             downloaded_mb += 0.1
             progress = downloaded_mb / size_mb
             self.update_progress(progress)
