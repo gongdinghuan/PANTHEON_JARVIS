@@ -111,16 +111,9 @@ class MemoryManager:
                 settings=Settings(anonymized_telemetry=False)
             )
             
-            # 使用 OpenAI Embedding Function
-            from chromadb.utils import embedding_functions
-            openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=get_config().llm.openai_api_key,
-                model_name=self.config.embedding_model
-            )
-
+            
             self._collection = self._chroma_client.get_or_create_collection(
                 name="jarvis_memory",
-                embedding_function=openai_ef,
                 metadata={"description": "JARVIS conversation memory"}
             )
             
