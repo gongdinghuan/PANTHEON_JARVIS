@@ -258,13 +258,13 @@ class SecurityConfig:
 class MemoryConfig:
     """记忆系统配置"""
     # ChromaDB 存储路径
-    chroma_persist_dir: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory"))
+    chroma_persist_dir: str = field(default_factory=lambda: str(Path("data/memory").absolute()))
     
     # Holo-Mem L3: 知识图谱路径
-    graph_storage_path: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory" / "kg_graph.graphml"))
+    graph_storage_path: str = field(default_factory=lambda: str(Path("data/memory/kg_graph.graphml").absolute()))
     
     # Holo-Mem L2: 时间线摘要存储目录
-    timeline_storage_dir: str = field(default_factory=lambda: str(Path.home() / ".jarvis" / "memory" / "timeline"))
+    timeline_storage_dir: str = field(default_factory=lambda: str(Path("data/memory/timeline").absolute()))
 
     # 短期记忆保留的对话轮数
     short_term_turns: int = 20
