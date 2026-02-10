@@ -34,6 +34,7 @@ class LLMProvider(Enum):
 
     NVIDIA = "nvidia"
     ZHIPU = "zhipu"
+    GEMINI = "gemini"
 
 
 class SearchProvider(Enum):
@@ -41,6 +42,8 @@ class SearchProvider(Enum):
     BAIDU = "baidu"
     DUCKDUCKGO = "duckduckgo"
     GOOGLE = "google"
+    TAVILY = "tavily"
+    BRAVE = "brave"
 
 
 class PermissionLevel(Enum):
@@ -82,9 +85,14 @@ class LLMConfig:
     zhipu_base_url: str = field(default_factory=lambda: os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"))
     zhipu_model: str = field(default_factory=lambda: os.getenv("ZHIPU_MODEL", "glm-4"))
     
+    # Local Gemini 配置
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", "sk-9114341895db4f9780ede6d01d21f71a"))
+    gemini_base_url: str = field(default_factory=lambda: os.getenv("GEMINI_BASE_URL", "http://localhost:8045/v1"))
+    gemini_model: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3-pro-high"))
+    
     # 通用配置
     temperature: float = 0.7
-    max_tokens: int = 8096
+    max_tokens: int = 80960
     stream: bool = True
     request_timeout: float = 120.0  # 增加超时时间，复杂请求需要更长时间
 
@@ -262,7 +270,8 @@ class MemoryConfig:
     short_term_turns: int = 20
     
     # 长期记忆检索数量
-    retrieval_k: int = 5
+    # 长期记忆检索数量
+    retrieval_k: int = 1000
     
     # 嵌入模型
     embedding_model: str = "text-embedding-3-small"
@@ -302,6 +311,10 @@ class WebConfig:
     
     # 搜索超时时间（秒）
     search_timeout: int = 30
+
+    # 新增搜索 API Key
+    tavily_api_key: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
+    brave_api_key: str = field(default_factory=lambda: os.getenv("BRAVE_API_KEY", ""))
 
 
 @dataclass

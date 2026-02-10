@@ -120,6 +120,12 @@ class Jarvis:
         if "scheduler" in self.skills:
             self.skills["scheduler"].set_planner(self.planner)
             self.scheduler = self.skills["scheduler"] # 便捷访问别名
+            
+        # 注入 Planner 和 Heartbeat 到持续进化引擎 (使其能够自主执行任务)
+        self.continuous_evolution.set_planner(self.planner)
+        self.continuous_evolution.set_heartbeat(self.heartbeat)
+        self.continuous_evolution.enable_autonomy(True)
+
         
         
         # 表达层
@@ -858,6 +864,13 @@ if __name__ == "__main__":
             
             if jarvis.config.heartbeat.enabled:
                 jarvis.heartbeat.start()
+                
+            # 启动持续进化引擎 (自主模式)
+            await jarvis.continuous_evolution.start()
+            
+            # 启动定时任务调度器
+            if "scheduler" in jarvis.skills:
+                await jarvis.skills["scheduler"].execute("start_scheduler")
         
         app.add_event_handler("startup", startup)
         
