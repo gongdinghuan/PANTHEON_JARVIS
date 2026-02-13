@@ -7,6 +7,7 @@ Author: gngdingghuan
 
 import json
 import re
+import functools
 from typing import Dict, List, Any, Optional, Callable
 
 from cognitive.llm_brain import LLMBrain
@@ -71,11 +72,16 @@ class ReActPlanner:
         # 工具使用跟踪（用于进化学习）
         self._last_used_tools: List[str] = []
         
+        # Tool schema 缓存
+        self._tools_schema_cache: Optional[List[Dict]] = None
+        self._tools_schema_dirty: bool = True
+        
         log.info(f"ReAct 规划器初始化完成，已注册 {len(self.skills)} 个技能")
     
     def register_skill(self, name: str, skill: Any):
         """注册技能"""
         self.skills[name] = skill
+        self._tools_schema_dirty = True
         log.debug(f"已注册技能: {name}")
     
     def set_confirmation_callback(self, callback: Callable):
@@ -87,14 +93,17 @@ class ReActPlanner:
         return self.task_manager
     
     def _get_tools_schema(self) -> List[Dict]:
-        """获取所有技能的 Function Calling Schema"""
-        tools = []
-        for name, skill in self.skills.items():
-            if hasattr(skill, 'get_schema'):
-                schema = skill.get_schema()
-                if schema:
-                    tools.append(schema)
-        return tools
+        """获取所有技能的 Function Calling Schema（带缓存）"""
+        if self._tools_schema_dirty or self._tools_schema_cache is None:
+            tools = []
+            for name, skill in self.skills.items():
+                if hasattr(skill, 'get_schema'):
+                    schema = skill.get_schema()
+                    if schema:
+                        tools.append(schema)
+            self._tools_schema_cache = tools
+            self._tools_schema_dirty = False
+        return self._tools_schema_cache
     
     def _build_system_prompt(self) -> str:
         """构建系统提示词"""
@@ -161,7 +170,7 @@ class ReActPlanner:
             similar_experiences = self.evolution_engine.search_similar_experience(
                 user_input, 
                 task_type=task_type,
-                limit=10
+                limit=3
             )
         else:
             similar_experiences = []
@@ -523,7 +532,6 @@ class ReActPlanner:
             skill.set_progress_callback(lambda p: asyncio.create_task(progress_callback(p)))
         
         # 使用 partial 绑定参数，避免参数名与 submit_task 的参数（如 name）冲突
-        import functools
         func_to_run = functools.partial(skill.execute, **arguments)
         
         # 提交任务到任务管理器
@@ -551,33 +559,32 @@ class ReActPlanner:
                 "success": result.success,
                 "output": result.output,
                 "error": result.error,
-                "visualization": result.visualization
+                "visualization": result.visualization,
+                "attachments": result.attachments
             }
-            # 检查 output 是否可序列化
-            try:
-                json.dumps(result_dict, ensure_ascii=False)
-                return result_dict
-            except (TypeError, ValueError):
-                # 如果 output 不可序列化，转换为字符串
-                return {
-                    "success": result.success,
-                    "output": str(result.output) if result.output is not None else None,
-                    "error": result.error
-                }
         else:
-            # 处理非 SkillResult 结果
-            try:
-                json.dumps(result, ensure_ascii=False)
-                return {
-                    "success": True,
-                    "output": result
-                }
-            except (TypeError, ValueError):
-                # 如果结果不可序列化，转换为字符串
-                return {
-                    "success": True,
-                    "output": str(result) if result is not None else None
-                }
+            result_dict = {
+                "success": True,
+                "output": result
+            }
+        
+        # 单次序列化检查
+        try:
+            json.dumps(result_dict, ensure_ascii=False)
+            return result_dict
+        except (TypeError, ValueError):
+            #如果不包含 attachment，则不返回
+            clean_dict = {
+                "success": result_dict.get("success", True),
+                "output": str(result_dict.get("output")) if result_dict.get("output") is not None else None,
+                "error": result_dict.get("error")
+            }
+            if result_dict.get("visualization"):
+                 clean_dict["visualization"] = result_dict.get("visualization")
+            if result_dict.get("attachments"):
+                 # Attachments usually contain paths, should be serializable
+                 clean_dict["attachments"] = result_dict.get("attachments")
+            return clean_dict
     
     async def simple_respond(self, user_input: str) -> str:
         """

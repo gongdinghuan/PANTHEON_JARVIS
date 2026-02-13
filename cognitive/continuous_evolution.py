@@ -68,9 +68,13 @@ class ContinuousEvolutionEngine:
         
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._analysis_interval = 60  # 每60秒分析一次
+        self._analysis_interval = 300  # 5分钟基础间隔
+        self._current_interval = 300   # 当前间隔（渐进退避）
+        self._max_interval = 600       # 最大间隔 10 分钟
         self._last_feedback_time = None
         self._feedback_cooldown = 300  # 反馈冷却5分钟
+        self._last_autonomy_time: Optional[datetime] = None
+        self._autonomy_cooldown = 1800  # 自主行动冷却 30 分钟
         
         self._achieved_milestones = set()
         self._pending_insights = []
@@ -124,57 +128,66 @@ class ContinuousEvolutionEngine:
         log.info(f"自主模式已{'启用' if enabled else '禁用'}")
 
     async def _evolution_loop(self):
-        """进化循环"""
+        """进化循环（渐进退避）"""
         while self._running:
             try:
-                # 等待分析间隔
-                await asyncio.sleep(self._analysis_interval)
+                await asyncio.sleep(self._current_interval)
                 
                 # 执行进化分析
-                await self._analyze_and_evolve()
+                had_new = await self._analyze_and_evolve()
+                
+                # 渐进退避：无新经验时间隔翻倍，有新经验时重置
+                if had_new:
+                    self._current_interval = self._analysis_interval
+                else:
+                    self._current_interval = min(
+                        self._current_interval * 2,
+                        self._max_interval
+                    )
 
-                # 执行自主行动检查
+                # 执行自主行动检查（带冷却）
                 if self.autonomy_enabled and self.planner:
-                    await self._check_and_perform_autonomy()
+                    now = datetime.now()
+                    if (self._last_autonomy_time is None or 
+                        (now - self._last_autonomy_time).total_seconds() >= self._autonomy_cooldown):
+                        performed = await self._check_and_perform_autonomy()
+                        if performed:
+                            self._last_autonomy_time = now
                 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 log.error(f"进化循环错误: {e}")
 
-    async def _check_and_perform_autonomy(self):
-        """检查并执行自主行为"""
+    async def _check_and_perform_autonomy(self) -> bool:
+        """检查并执行自主行为，返回是否执行了操作"""
         try:
-            # 1. 检查是否空闲
             if not self.heartbeat:
-                return
+                return False
 
             last_active = datetime.fromisoformat(self.heartbeat._stats.last_active)
             idle_seconds = (datetime.now() - last_active).total_seconds()
             
             if idle_seconds < self.idle_threshold:
-                return
-            
-            # 2. 只有在确实空闲且没有正在运行的后台任务时才行动
-            #TODO: 检查 TaskManager 状态
+                return False
             
             log.info(f"系统已空闲 {idle_seconds:.0f}秒，正在思考自主行动...")
             
-            # 3. 构思自主任务
             autonomous_task = await self._brainstorm_autonomous_task()
             
             if autonomous_task:
                 log.info(f"自主决定执行任务: {autonomous_task}")
-                # 执行任务
                 await self.planner.plan_and_execute(
                     autonomous_task, 
                     user_id="jarvis_self"
                 )
-                # 更新最后活跃时间以避免连续触发
                 self.heartbeat.record_activity()
+                return True
+            return False
                 
         except Exception as e:
             log.warning(f"自主行动失败: {e}")
+            return False
 
     async def _brainstorm_autonomous_task(self) -> Optional[str]:
         """头脑风暴：基于好奇心的自主探索"""
@@ -257,15 +270,14 @@ class ContinuousEvolutionEngine:
             return None
 
     
-    async def _analyze_and_evolve(self):
-        """分析并进化"""
+    async def _analyze_and_evolve(self) -> bool:
+        """分析并进化，返回是否有新经验"""
         try:
-            # 1. 检查是否有新经验
             current_count = len(self.evolution._experiences)
             new_experiences = current_count - self._last_experience_count
             
             if new_experiences == 0:
-                return
+                return False
             
             self._last_experience_count = current_count
             
@@ -282,9 +294,11 @@ class ContinuousEvolutionEngine:
             await self._maybe_feedback()
             
             self._last_analysis_time = datetime.now()
+            return True
             
         except Exception as e:
             log.error(f"进化分析失败: {e}")
+            return False
     
     async def _generate_insights(self, new_experiences: int) -> List[EvolutionInsight]:
         """生成进化洞察"""

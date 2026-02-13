@@ -121,6 +121,10 @@ class TaskManager:
         
         self._tasks[task_id] = task
         
+        # 自动清理：每 100 次提交 或 超过 500 个任务时触发
+        if self._task_counter % 100 == 0 or len(self._tasks) > 500:
+            self.cleanup_old_tasks(max_age_hours=12)
+        
         if is_background:
             # 判断是否为异步函数
             is_async = asyncio.iscoroutinefunction(func) or (isinstance(func, partial) and asyncio.iscoroutinefunction(func.func))
@@ -418,9 +422,11 @@ class TaskManager:
         
         task = self._tasks[task_id]
         
-        # 等待任务完成
+        # 等待任务完成（指数退避）
+        wait_interval = 0.1
         while task.status == TaskStatus.RUNNING or task.status == TaskStatus.PENDING:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(wait_interval)
+            wait_interval = min(wait_interval * 1.5, 1.0)
             
             # 检查超时
             if timeout:
@@ -444,28 +450,30 @@ class TaskManager:
             raise Exception("任务已取消")
     
     def get_stats(self) -> Dict[str, Any]:
-        """
-        获取任务统计
-        
-        Returns:
-            统计信息
-        """
-        total = len(self._tasks)
-        pending = sum(1 for t in self._tasks.values() if t.status == TaskStatus.PENDING)
-        running = sum(1 for t in self._tasks.values() if t.status == TaskStatus.RUNNING)
-        completed = sum(1 for t in self._tasks.values() if t.status == TaskStatus.COMPLETED)
-        failed = sum(1 for t in self._tasks.values() if t.status == TaskStatus.FAILED)
-        cancelled = sum(1 for t in self._tasks.values() if t.status == TaskStatus.CANCELLED)
+        """获取任务统计（单次遍历）"""
+        pending = running = completed = failed = cancelled = 0
+        for t in self._tasks.values():
+            s = t.status
+            if s == TaskStatus.PENDING:
+                pending += 1
+            elif s == TaskStatus.RUNNING:
+                running += 1
+            elif s == TaskStatus.COMPLETED:
+                completed += 1
+            elif s == TaskStatus.FAILED:
+                failed += 1
+            elif s == TaskStatus.CANCELLED:
+                cancelled += 1
         
         return {
-            "total_tasks": total,
+            "total_tasks": len(self._tasks),
             "pending": pending,
             "running": running,
             "completed": completed,
             "failed": failed,
             "cancelled": cancelled,
-            "active_tasks_count": self.get_active_tasks_count(),
-            "completed_tasks_count": self.get_completed_tasks_count()
+            "active_tasks_count": running,
+            "completed_tasks_count": completed
         }
     
     async def shutdown(self, wait: bool = True):

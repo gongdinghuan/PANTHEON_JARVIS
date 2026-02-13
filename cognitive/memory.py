@@ -6,9 +6,10 @@ Author: gngdingghuan
 """
 
 import json
+import math
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Set
 from dataclasses import dataclass, asdict
 
 try:
@@ -124,7 +125,55 @@ class MemoryManager:
             self._chroma_client = None
             self._collection = None
 
-    def add_message(self, role: str, content: str, metadata: Optional[Dict] = None, importance: float = 1.0):
+    def _auto_evaluate_importance(self, role: str, content: str) -> float:
+        """
+        自动评估消息重要性 (LLM-free)
+        基于内容模式分析给出 1-10 的重要性评分
+        """
+        score = 1.0
+        content_lower = content.lower()
+        
+        # 角色加权: assistant 回复通常更有信息量
+        if role == 'assistant':
+            score += 0.5
+        elif role == 'system':
+            score += 1.0
+        
+        # 内容长度加权: 较长的回复通常包含更多信息
+        content_len = len(content)
+        if content_len > 500:
+            score += 1.0
+        elif content_len > 200:
+            score += 0.5
+        
+        # 关键动作检测
+        action_keywords = ['创建', '删除', '修改', 'created', 'deleted', 'modified',
+                          '执行', '安装', 'install', '部署', 'deploy', '配置', 'config']
+        if any(kw in content_lower for kw in action_keywords):
+            score += 2.0
+        
+        # 代码/技术内容检测
+        code_indicators = ['```', 'def ', 'class ', 'import ', 'function ', 'const ', 'var ']
+        if any(ind in content for ind in code_indicators):
+            score += 1.5
+        
+        # 错误/问题检测 (通常需要被记住)
+        error_keywords = ['错误', 'error', 'exception', '失败', 'failed', 'bug', '修复', 'fix']
+        if any(kw in content_lower for kw in error_keywords):
+            score += 1.5
+        
+        # 用户偏好/个人信息检测
+        preference_keywords = ['喜欢', '偏好', '习惯', 'prefer', '名字', 'name', '生日', 'birthday']
+        if any(kw in content_lower for kw in preference_keywords):
+            score += 2.0
+        
+        # 包含结构化数据 (JSON/表格)
+        if '{' in content and '}' in content:
+            score += 0.5
+        
+        return min(score, 10.0)  # 上限 10
+
+    def add_message(self, role: str, content: str, metadata: Optional[Dict] = None, importance: float = 0.0):
         """
         添加一条消息到记忆
         
@@ -132,13 +181,17 @@ class MemoryManager:
             role: 角色 (user/assistant/system)
             content: 消息内容
             metadata: 额外元数据
-            importance: 重要性评分 (1-10)
+            importance: 重要性评分 (1-10), 0=自动评估
         """
         # 安全截断，防止 Context Overflow
         safe_content = content
         if len(safe_content) > 20000:
              log.warning(f"新消息过长 ({len(safe_content)} 字符)，正在截断...")
              safe_content = safe_content[:20000] + f"\n... [Content Truncated due to length {len(safe_content)} > 20000]"
+
+        # 自动评估重要性 (如果未手动指定)
+        if importance <= 0:
+            importance = self._auto_evaluate_importance(role, safe_content)
 
         turn = ConversationTurn(
             role=role,
@@ -158,22 +211,36 @@ class MemoryManager:
             removed = self._short_term.pop(0)
             self._save_to_long_term(removed)
         
-        log.debug(f"已添加消息到记忆: [{role}] {content[:50]}... (重要性: {importance})")
+        log.debug(f"已添加消息到记忆: [{role}] {content[:50]}... (重要性: {importance:.1f})")
 
     async def nightly_consolidate(self, summarizer_func: Callable[[str], Any], extractor_func: Optional[Callable[[str], List[Dict]]] = None):
         """
-        夜间固化 (Consolidation):
-        1. L1 -> L2: 将近期 raw logs 摘要为 Daily Timeline (Markdown)
+        夜间固化 (Consolidation) - 增量版:
+        1. L1 -> L2: 将未固化的 raw logs 摘要为 Daily Timeline (Markdown)
         2. L2 -> L3: 从摘要中提取实体关系，存入 Graph
+        3. 图谱权重衰减
         """
         if not self._short_term:
             return
             
         log.info("开始执行记忆固化 (Consolidation)...")
         
-        # 1. 准备数据
-        buffer_text = "\n".join([f"[{t.timestamp}] {t.role}: {t.content}" for t in self._short_term])
         date_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # 增量固化：只处理尚未固化的消息
+        unconsolidated = [
+            t for t in self._short_term
+            if not (t.metadata or {}).get('consolidated', False)
+        ]
+        
+        if not unconsolidated:
+            log.info("所有消息已固化，跳过")
+            # 仍执行图谱衰减
+            self.graph_storage.decay_weights()
+            return
+        
+        # 1. 准备数据
+        buffer_text = "\n".join([f"[{t.timestamp}] {t.role}: {t.content}" for t in unconsolidated])
         
         # 2. 生成每日摘要 (L2)
         try:
@@ -184,19 +251,31 @@ class MemoryManager:
             timeline_dir.mkdir(parents=True, exist_ok=True)
             timeline_file = timeline_dir / f"{date_str}.md"
             
-            with open(timeline_file, "w", encoding='utf-8') as f:
-                f.write(f"# {date_str} Memory Consolidation\n\n")
+            # 追加模式，同一天可能多次固化
+            mode = "a" if timeline_file.exists() else "w"
+            with open(timeline_file, mode, encoding='utf-8') as f:
+                if mode == "w":
+                    f.write(f"# {date_str} Memory Consolidation\n\n")
+                else:
+                    f.write(f"\n\n---\n\n## 增量固化 ({datetime.now().strftime('%H:%M')})\n\n")
                 f.write(summary)
             
-            # 将摘要存入向量库 (Type=episodic)
+            # 将摘要存入向量库 (Type=episodic)，先去重检查
             if self._collection:
-                 self._collection.add(
+                summary_id = f"summary_{date_str}_{uuid.uuid4().hex[:6]}"
+                self._collection.add(
                     documents=[summary],
-                    metadatas=[{"type": "episodic", "date": date_str}],
-                    ids=[f"summary_{date_str}_{uuid.uuid4().hex[:6]}"]
-                 )
+                    metadatas=[{"type": "episodic", "date": date_str, "consolidated": True}],
+                    ids=[summary_id]
+                )
                  
-            log.info(f"L2 记忆固化完成: {timeline_file}")
+            log.info(f"L2 记忆固化完成: {timeline_file} ({len(unconsolidated)} 条消息)")
+            
+            # 标记已固化
+            for turn in unconsolidated:
+                if turn.metadata is None:
+                    turn.metadata = {}
+                turn.metadata['consolidated'] = True
             
             # 3. 提取知识图谱 (L3)
             if extractor_func:
@@ -216,14 +295,30 @@ class MemoryManager:
                     log.info(f"L3 图谱更新完成，新增 {count} 条关系")
                 except Exception as e:
                     log.warning(f"L3 图谱提取失败: {e}")
+            
+            # 4. 图谱权重衰减
+            self.graph_storage.decay_weights()
 
         except Exception as e:
             log.error(f"记忆固化失败: {e}")
 
+    # 问候/短查询模式 — 跳过检索
+    _GREETING_PATTERNS = frozenset([
+        "你好", "您好", "嗨", "hi", "hello", "hey", "嗯", "哦",
+        "谢谢", "thanks", "好的", "ok", "再见", "bye",
+    ])
+
     async def retrieve_context_hybrid(self, query: str, limit: Optional[int] = None) -> List[str]:
         """
         混合检索 (Hybrid Retrieval): Vector + Graph
+        短查询和问候语自动跳过，避免不必要的向量搜索
         """
+        # 短查询/问候语跳过检索
+        query_stripped = query.strip().lower()
+        if len(query_stripped) < 5 or query_stripped in self._GREETING_PATTERNS:
+            log.debug(f"短查询/问候跳过检索: '{query_stripped}'")
+            return []
+        
         limit = limit or self.config.retrieval_k  # 使用全局配置
         context_results = []
         
@@ -402,21 +497,42 @@ class MemoryManager:
             log.error(f"恢复短期记忆失败: {e}")
 
     def _save_to_long_term(self, turn: ConversationTurn):
-        """保存到长期记忆（ChromaDB）"""
+        """保存到长期记忆（ChromaDB），带语义去重"""
         if not self._collection:
             return
         
         try:
-            doc_id = f"{turn.role}_{turn.timestamp}"
+            # 语义去重: 查询是否已有高度相似的记忆
+            if self._collection.count() > 0:
+                try:
+                    existing = self._collection.query(
+                        query_texts=[turn.content],
+                        n_results=1
+                    )
+                    if (existing['distances'] and existing['distances'][0] 
+                        and existing['distances'][0][0] < 0.15):  # L2 距离 < 0.15 视为重复
+                        log.debug(f"语义去重: 跳过相似记忆 (distance={existing['distances'][0][0]:.3f})")
+                        return
+                except Exception:
+                    pass  # 去重失败不影响存储
+            
+            doc_id = f"{turn.role}_{turn.timestamp}_{uuid.uuid4().hex[:4]}"
+            
+            # 清理 metadata 中不兼容的类型
+            clean_meta = {
+                "role": turn.role,
+                "timestamp": turn.timestamp,
+                "importance": turn.importance,
+                "access_count": 0,  # 用于评分算法
+            }
+            if turn.metadata:
+                for k, v in turn.metadata.items():
+                    if isinstance(v, (str, int, float, bool)):
+                        clean_meta[k] = v
             
             self._collection.add(
                 documents=[turn.content],
-                metadatas=[{
-                    "role": turn.role,
-                    "timestamp": turn.timestamp,
-                    "importance": turn.importance,
-                    **(turn.metadata or {})
-                }],
+                metadatas=[clean_meta],
                 ids=[doc_id]
             )
             
@@ -432,16 +548,18 @@ class MemoryManager:
 
     def search_relevant(self, query: str, k: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        语义搜索相关记忆（综合考虑 相似度、重要性、时效性）
+        语义搜索相关记忆（增强评分算法）
         
-        Score = (Similarity * 0.6) + (Importance_Norm * 0.3) + (Recency_Norm * 0.1)
+        Score = Similarity*0.5 + Importance*0.25 + Recency*0.15 + AccessFreq*0.1
+        
+        使用指数衰减代替线性衰减，增加访问频率因子
         
         Args:
             query: 查询文本
             k: 返回数量
             
         Returns:
-            相关记忆列表 (早已按权重排序)
+            相关记忆列表 (按综合得分排序)
         """
         if not self._collection:
             return []
@@ -459,46 +577,81 @@ class MemoryManager:
             candidates = []
             if results["documents"] and results["documents"][0]:
                 now = datetime.now()
+                
+                # 计算访问频率归一化参数
+                access_counts = []
+                for i in range(len(results["documents"][0])):
+                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
+                    access_counts.append(float(meta.get("access_count", 0)))
+                max_access = max(access_counts) if access_counts and max(access_counts) > 0 else 1.0
+                
                 for i, doc in enumerate(results["documents"][0]):
                     meta = results["metadatas"][0][i] if results["metadatas"] else {}
                     distance = results["distances"][0][i] if results["distances"] else 1.0
                     
-                    # 1. 计算相似度 (distance 越小相似度越高，假设 distance 是欧几里得距离或余弦距离的变体)
-                    # Chroma 默认 L2，范围不固定。这里简单归一化: 1 / (1 + distance)
+                    # 1. 相似度 (L2 归一化)
                     similarity = 1 / (1 + distance)
                     
-                    # 2. 计算重要性 (归一化到 0-1)
+                    # 2. 重要性 (归一化到 0-1)
                     importance = float(meta.get("importance", 1.0)) / 10.0
                     
-                    # 3. 计算时效性 (简单衰减: 30天内线性衰减，或者对数衰减)
+                    # 3. 时效性 (指数衰减: exp(-λ * days), λ=0.1)
                     timestamp_str = meta.get("timestamp", now.isoformat())
                     try:
                         record_time = datetime.fromisoformat(timestamp_str)
-                        # 简单的天数差
-                        days_diff = (now - record_time).days
-                        recency = 1.0 / (1.0 + max(0, days_diff)) # 越近越大
+                        days_diff = max(0, (now - record_time).total_seconds() / 86400)
+                        recency = math.exp(-0.1 * days_diff)
                     except:
                         recency = 0.5
                     
-                    # 综合评分权重
-                    # 这里假设我们更看重语义相关性，其次是重要性，最后是时间
-                    final_score = (similarity * 0.6) + (importance * 0.3) + (recency * 0.1)
+                    # 4. 访问频率 (归一化到 0-1)
+                    access_freq = float(meta.get("access_count", 0)) / max_access if max_access > 0 else 0
+                    
+                    # 综合评分 (优化权重分配)
+                    final_score = (
+                        similarity * 0.50 +
+                        importance * 0.25 +
+                        recency * 0.15 +
+                        access_freq * 0.10
+                    )
                     
                     candidates.append({
                         "content": doc,
                         "metadata": meta,
                         "score": final_score,
-                        "raw_distance": distance
+                        "raw_distance": distance,
+                        "doc_id": results["ids"][0][i] if results.get("ids") else None
                     })
             
             # 按最终得分排序
             candidates.sort(key=lambda x: x["score"], reverse=True)
             
-            return candidates[:k]
+            # 更新被检索记忆的访问计数
+            top_results = candidates[:k]
+            self._increment_access_counts(top_results)
+            
+            return top_results
             
         except Exception as e:
             log.error(f"语义搜索失败: {e}")
             return []
+    
+    def _increment_access_counts(self, results: List[Dict[str, Any]]):
+        """增加被检索记忆的访问计数"""
+        if not self._collection:
+            return
+        try:
+            for r in results:
+                doc_id = r.get("doc_id")
+                if doc_id:
+                    meta = dict(r.get("metadata", {}))
+                    meta["access_count"] = int(meta.get("access_count", 0)) + 1
+                    self._collection.update(
+                        ids=[doc_id],
+                        metadatas=[meta]
+                    )
+        except Exception as e:
+            log.debug(f"更新访问计数失败: {e}")
     
     def get_context_with_memory(self, query: str) -> List[Dict[str, str]]:
         """
@@ -558,11 +711,12 @@ class MemoryManager:
         log.info("所有记忆已清空")
     
     def get_stats(self) -> Dict[str, Any]:
-        """获取记忆统计信息"""
+        """获取记忆统计信息（含图谱统计）"""
         stats = {
             "short_term_count": len(self._short_term),
             "long_term_count": 0,
             "chromadb_available": CHROMADB_AVAILABLE,
+            "core_memory_keys": len(self._core_memory),
         }
         
         if self._collection:
@@ -570,5 +724,15 @@ class MemoryManager:
                 stats["long_term_count"] = self._collection.count()
             except:
                 pass
+        
+        # 图谱统计
+        try:
+            graph_stats = self.graph_storage.get_graph_stats()
+            stats["graph_nodes"] = graph_stats.get("nodes", 0)
+            stats["graph_edges"] = graph_stats.get("edges", 0)
+            stats["graph_central_concepts"] = graph_stats.get("central_concepts", [])
+        except:
+            stats["graph_nodes"] = 0
+            stats["graph_edges"] = 0
         
         return stats

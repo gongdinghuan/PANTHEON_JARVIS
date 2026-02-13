@@ -5,6 +5,7 @@ JARVIS 上下文管理器
 Author: gngdingghuan
 """
 
+import time
 import psutil
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -46,10 +47,22 @@ class ContextManager:
     - 维护任务上下文（当前任务、工作目录等）
     """
     
+    # 缓存 TTL（秒）
+    _STATE_CACHE_TTL = 5.0
+    _APPS_CACHE_TTL = 30.0
+
     def __init__(self):
         self._system_state = SystemState()
         self._task_context = TaskContext()
         self._platform = get_platform()
+        
+        # 缓存时间戳
+        self._last_state_refresh: float = 0.0
+        self._last_apps_refresh: float = 0.0
+        self._cached_apps: List[str] = []
+        
+        # 预热 cpu_percent（首次调用需要 interval，后续用 None）
+        psutil.cpu_percent(interval=None)
         
         log.info(f"上下文管理器初始化完成，平台: {self._platform}")
     
@@ -77,7 +90,12 @@ class ContextManager:
         }
     
     def _refresh_system_state(self):
-        """刷新系统状态"""
+        """刷新系统状态（带缓存）"""
+        now = time.monotonic()
+        if now - self._last_state_refresh < self._STATE_CACHE_TTL:
+            return  # 缓存有效，跳过
+        self._last_state_refresh = now
+        
         try:
             # 活跃窗口
             self._system_state.active_window = get_active_window_title()
@@ -85,12 +103,15 @@ class ContextManager:
             # 剪贴板
             self._system_state.clipboard_content = get_clipboard_text()
             
-            # 系统资源
-            self._system_state.cpu_percent = psutil.cpu_percent(interval=0.1)
+            # 系统资源（非阻塞 interval=None）
+            self._system_state.cpu_percent = psutil.cpu_percent(interval=None)
             self._system_state.memory_percent = psutil.virtual_memory().percent
             
-            # 运行中的应用
-            self._system_state.running_apps = self._get_running_apps()
+            # 运行中的应用（独立缓存 30s）
+            if now - self._last_apps_refresh >= self._APPS_CACHE_TTL:
+                self._cached_apps = self._get_running_apps()
+                self._last_apps_refresh = now
+            self._system_state.running_apps = self._cached_apps
             
             # 时间戳
             self._system_state.timestamp = datetime.now().isoformat()
@@ -111,7 +132,7 @@ class ContextManager:
                     pass
         except Exception:
             pass
-        return sorted(list(apps))[:50]  # 限制数量
+        return sorted(list(apps))[:50]
     
     def _get_clipboard_preview(self) -> Optional[str]:
         """获取剪贴板预览（截断长文本）"""

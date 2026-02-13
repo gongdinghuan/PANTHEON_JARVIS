@@ -264,6 +264,15 @@ class UserSessionManager:
         
         return len(to_remove)
 
+    async def broadcast(self, message: Dict[str, Any]):
+        """广播消息给所有在线用户"""
+        for session in self._sessions.values():
+            if session.is_online and session.websocket:
+                try:
+                    await session.websocket.send_json(message)
+                except Exception as e:
+                    log.warning(f"广播消息失败 ({session.user_id}): {e}")
+
 
 # 全局实例
 _session_manager: Optional[UserSessionManager] = None
