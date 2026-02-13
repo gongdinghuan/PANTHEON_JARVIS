@@ -54,6 +54,9 @@ from skills.longport_skill import LongPortSkill
 from skills.code_interpreter import CodeInterpreterSkill
 from skills.email_skill import EmailSkill
 from skills.image_generation import ImageGenerationSkill
+from skills.browser_automation import BrowserAutomationSkill
+from adapters import AdapterManager
+from adapters.qq_adapter import QQAdapter
 from expression.tts import TTS
 from security.confirmation import get_confirmation_handler
 
@@ -125,8 +128,10 @@ class Jarvis:
         self.continuous_evolution.set_planner(self.planner)
         self.continuous_evolution.set_heartbeat(self.heartbeat)
         self.continuous_evolution.enable_autonomy(True)
-
         
+        # IM 适配器管理器
+        self.adapter_manager = AdapterManager()
+        self._init_adapters()
         
         # 表达层
         self.tts = TTS()
@@ -173,6 +178,16 @@ class Jarvis:
             log.warning(f"记忆恢复或任务调度失败: {e}")
             
         console.print("[green][OK] 记忆恢复与调度完成[/green]")
+        
+        # 启动 IM 适配器
+        try:
+            await self.adapter_manager.start_all()
+            adapters_status = self.adapter_manager.get_all_status()
+            for a in adapters_status:
+                if a['running']:
+                    console.print(f"[green][OK] IM 适配器已启动: {a['name']}[/green]")
+        except Exception as e:
+            log.warning(f"启动 IM 适配器时出错: {e}")
     
     async def cleanup(self):
         """清理资源"""
@@ -198,10 +213,32 @@ class Jarvis:
             log.warning(f"关闭任务管理器时出错: {e}")
         
         try:
+            # 关闭浏览器自动化技能
+            browser_skill = self.planner.skills.get("browser_automation")
+            if browser_skill and hasattr(browser_skill, 'close'):
+                await browser_skill.close()
+                log.info("浏览器自动化技能已关闭")
+        except Exception as e:
+            log.warning(f"关闭浏览器技能时出错: {e}")
+        
+        try:
+            # 持久化核心记忆
+            self.memory._save_core_memory()
+            log.info("核心记忆已保存")
+        except Exception as e:
+            log.warning(f"保存核心记忆时出错: {e}")
+        
+        try:
             # 关闭 LLM Brain
             await self.brain.close()
         except Exception as e:
             log.warning(f"关闭 LLM Brain 时出错: {e}")
+        
+        try:
+            # 停止 IM 适配器
+            await self.adapter_manager.stop_all()
+        except Exception as e:
+            log.warning(f"停止 IM 适配器时出错: {e}")
         
         console.print("[dim]资源清理完成[/dim]")
     
@@ -263,9 +300,35 @@ class Jarvis:
         image_gen = ImageGenerationSkill()
         skills["image_generation"] = image_gen
         
+        # 浏览器自动化
+        browser_skill = BrowserAutomationSkill()
+        skills["browser_automation"] = browser_skill
+        
         console.print(f"[dim]已加载 {len(skills)} 个技能[/dim]")
         
         return skills
+    
+    def _init_adapters(self):
+        """初始化 IM 适配器"""
+        im_config = self.config.im
+        
+        # QQ 适配器 (OneBot 11)
+        if im_config.qq_enabled:
+            try:
+                qq_adapter = QQAdapter(
+                    jarvis_instance=self,
+                    host=im_config.qq_onebot_ws_host,
+                    port=im_config.qq_onebot_ws_port,
+                    allowed_groups=im_config.get_qq_allowed_groups() or None,
+                    admin_qq=im_config.get_qq_admin_list() or None
+                )
+                self.adapter_manager.register(qq_adapter)
+                console.print(
+                    f"[dim]  QQ 适配器已注册 "
+                    f"(OneBot WS: {im_config.qq_onebot_ws_host}:{im_config.qq_onebot_ws_port})[/dim]"
+                )
+            except Exception as e:
+                log.error(f"初始化 QQ 适配器失败: {e}")
     
     def _inform_brain_system_info(self):
         """通知大脑中枢当前系统信息和时间"""

@@ -45,6 +45,11 @@ reports_dir = Path(__file__).parent / "reports"
 reports_dir.mkdir(exist_ok=True)
 app.mount("/reports", StaticFiles(directory=str(reports_dir)), name="reports")
 
+# 挂载生成图片目录
+images_dir = Path("generated_images")
+images_dir.mkdir(exist_ok=True)
+app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
+
 # 全局 JARVIS 实例（将在 main.py 中设置）
 jarvis_instance = None
 
@@ -106,6 +111,9 @@ async def get_status():
             "memory": {
                 "short_term_turns": memory_stats.get("short_term_turns"),
                 "long_term_memories": memory_stats.get("long_term_count"),
+                "graph_nodes": memory_stats.get("graph_nodes", 0),
+                "graph_edges": memory_stats.get("graph_edges", 0),
+                "core_memory_keys": memory_stats.get("core_memory_keys", 0),
             },
             "evolution": {
                 "total_interactions": evolution_stats.get("total_interactions"),
@@ -455,6 +463,92 @@ async def test_llm_connection(test_config: Dict[str, Any]):
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/memory/stats")
+async def get_memory_stats():
+    """获取记忆系统详细统计"""
+    if not jarvis_instance:
+        return {"error": "JARVIS 未初始化"}
+    try:
+        stats = jarvis_instance.memory.get_stats()
+        return {
+            "success": True,
+            "stats": stats,
+            "core_memory": jarvis_instance.memory.get_core_memory_text(),
+            "graph_summary": jarvis_instance.memory.graph_storage.get_graph_summary(),
+        }
+    except Exception as e:
+        log.error(f"获取记忆统计失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/memory/search")
+async def search_memory(request: Dict[str, Any]):
+    """语义搜索记忆"""
+    if not jarvis_instance:
+        return {"error": "JARVIS 未初始化"}
+    try:
+        query = request.get("query", "")
+        k = request.get("k", 5)
+        if not query:
+            return {"success": False, "error": "查询不能为空"}
+        
+        results = jarvis_instance.memory.search_relevant(query, k=k)
+        return {
+            "success": True,
+            "results": [
+                {
+                    "content": r["content"][:500],
+                    "score": round(r["score"], 4),
+                    "metadata": {
+                        "role": r["metadata"].get("role", "unknown"),
+                        "timestamp": r["metadata"].get("timestamp", ""),
+                        "importance": r["metadata"].get("importance", 1.0),
+                    }
+                }
+                for r in results
+            ]
+        }
+    except Exception as e:
+        log.error(f"记忆搜索失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.on_event("startup")
+async def startup_event():
+    """服务器启动时的初始化"""
+    
+    # [FIX] 预先初始化会话管理器，防止日志死锁
+    # 如果在 Sink 中首次调用 get_session_manager()，其内部的 log.info 会触发 Sink 导致递归
+    session_manager = get_session_manager()
+
+    def broadcast_log_sink(message):
+        """将日志广播到 WebSocket"""
+        try:
+            # 简单的异步桥接
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    loop.create_task(session_manager.broadcast({
+                        "type": "log",
+                        "message": message.strip(),
+                        "level": "INFO" # 简化处理，由前端解析
+                    }))
+            except RuntimeError:
+                pass
+        except Exception:
+            pass
+            
+    # 添加 WebSocket 日志输出
+    # 过滤一些过于频繁的日志
+    log.add(
+        broadcast_log_sink, 
+        level="INFO",
+        format="{time:HH:mm:ss} | {level: <8} | {name}:{function} - {message}",
+        filter=lambda record: record["name"] not in ["uvicorn.access", "http_client"]
+    )
+    log.info("日志广播已启用")
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """服务器关闭时的清理"""
@@ -503,10 +597,20 @@ async def websocket_endpoint(websocket: WebSocket):
         jarvis_instance.confirmation_handler.set_websocket(websocket)
     
     try:
-        # 发送欢迎消息
+        # 发送欢迎消息 (使用卡片 UI)
+        welcome_card = f"""
+<div class="card">
+    <div class="card-title">JARVIS 在线</div>
+    <div class="card-body">
+        - **状态**: <span style="color:var(--neon-green)">系统正常</span>
+        - **用户**: {user_id}
+        - **时间**: {datetime.now().strftime('%H:%M')}
+    </div>
+</div>
+        """
         await websocket.send_json({
-            "type": "system",
-            "message": f"已连接到 JARVIS",
+            "type": "chat", # Use chat type to enable markdown/html rendering
+            "message": welcome_card.strip(), 
             "user_id": user_id,
             "timestamp": datetime.now().isoformat(),
         })

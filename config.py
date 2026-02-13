@@ -92,7 +92,7 @@ class LLMConfig:
     
     # 通用配置
     temperature: float = 0.7
-    max_tokens: int = 80960
+    max_tokens: int = 8096
     stream: bool = True
     request_timeout: float = 120.0  # 增加超时时间，复杂请求需要更长时间
 
@@ -258,13 +258,13 @@ class SecurityConfig:
 class MemoryConfig:
     """记忆系统配置"""
     # ChromaDB 存储路径
-    chroma_persist_dir: str = field(default_factory=lambda: str(Path("data/memory").absolute()))
+    chroma_persist_dir: str = field(default_factory=lambda: str(Path("data/memory_v2").absolute()))
     
     # Holo-Mem L3: 知识图谱路径
-    graph_storage_path: str = field(default_factory=lambda: str(Path("data/memory/kg_graph.graphml").absolute()))
+    graph_storage_path: str = field(default_factory=lambda: str(Path("data/memory_v2/kg_graph.graphml").absolute()))
     
     # Holo-Mem L2: 时间线摘要存储目录
-    timeline_storage_dir: str = field(default_factory=lambda: str(Path("data/memory/timeline").absolute()))
+    timeline_storage_dir: str = field(default_factory=lambda: str(Path("data/memory_v2/timeline").absolute()))
 
     # 短期记忆保留的对话轮数
     short_term_turns: int = 20
@@ -274,7 +274,7 @@ class MemoryConfig:
     retrieval_k: int = 1000
     
     # 嵌入模型
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
 
 
 @dataclass
@@ -338,12 +338,54 @@ class HeartbeatConfig:
 
 
 @dataclass
+class BrowserConfig:
+    """浏览器自动化配置"""
+    headless: bool = True
+    timeout: int = 30000  # ms
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    screenshot_dir: str = "generated_images"
+    auto_close_minutes: int = 10
+
+
+@dataclass
 class LongPortConfig:
     """LongPort 配置"""
     app_key: str = field(default_factory=lambda: os.getenv("LONGPORT_APP_KEY", ""))
     app_secret: str = field(default_factory=lambda: os.getenv("LONGPORT_APP_SECRET", ""))
     access_token: str = field(default_factory=lambda: os.getenv("LONGPORT_ACCESS_TOKEN", ""))
     enabled: bool = field(default_factory=lambda: bool(os.getenv("LONGPORT_APP_KEY")))
+
+
+@dataclass
+class IMConfig:
+    """即时通讯适配器配置"""
+    # QQ (OneBot 11)
+    qq_enabled: bool = field(default_factory=lambda: os.getenv("QQ_ENABLED", "false").lower() == "true")
+    qq_onebot_ws_host: str = field(default_factory=lambda: os.getenv("QQ_ONEBOT_WS_HOST", "127.0.0.1"))
+    qq_onebot_ws_port: int = field(default_factory=lambda: int(os.getenv("QQ_ONEBOT_WS_PORT", "8011")))
+    qq_allowed_groups: str = field(default_factory=lambda: os.getenv("QQ_ALLOWED_GROUPS", ""))  # 逗号分隔
+    qq_admin_qq: str = field(default_factory=lambda: os.getenv("QQ_ADMIN_QQ", ""))  # 逗号分隔
+    
+    # Telegram
+    telegram_enabled: bool = field(default_factory=lambda: os.getenv("TELEGRAM_ENABLED", "false").lower() == "true")
+    telegram_bot_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    
+    # WeChat
+    wechat_enabled: bool = field(default_factory=lambda: os.getenv("WECHAT_ENABLED", "false").lower() == "true")
+    wechat_puppet_token: str = field(default_factory=lambda: os.getenv("WECHAT_PUPPET_TOKEN", ""))
+    
+    def get_qq_allowed_groups(self) -> list:
+        """解析允许的群号列表"""
+        if not self.qq_allowed_groups:
+            return []
+        return [int(g.strip()) for g in self.qq_allowed_groups.split(",") if g.strip()]
+    
+    def get_qq_admin_list(self) -> list:
+        """解析管理员 QQ 列表"""
+        if not self.qq_admin_qq:
+            return []
+        return [int(q.strip()) for q in self.qq_admin_qq.split(",") if q.strip()]
 
 
 @dataclass
@@ -358,6 +400,8 @@ class JarvisConfig:
     web: WebConfig = field(default_factory=WebConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
     longport: LongPortConfig = field(default_factory=LongPortConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
+    im: 'IMConfig' = field(default_factory=lambda: IMConfig())
     
     # 日志配置
     log_level: str = "INFO"
