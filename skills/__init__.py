@@ -9,6 +9,7 @@ from skills.system_control import SystemControlSkill
 from skills.file_manager import FileManagerSkill
 from skills.web_browser import WebBrowserSkill
 from skills.terminal import TerminalSkill
+from skills.browser_automation import BrowserAutomationSkill
 
 __all__ = [
     "BaseSkill",
@@ -17,4 +18,5 @@ __all__ = [
     "FileManagerSkill",
     "WebBrowserSkill",
     "TerminalSkill",
+    "BrowserAutomationSkill",
 ]
