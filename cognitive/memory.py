@@ -1,6 +1,11 @@
 """
-JARVIS 记忆管理模块
+JARVIS 记忆管理模块 v3.0
 使用 ChromaDB 实现向量存储和语义搜索
+
+升级特性:
+- EmbeddingRouter: 多后端 embedding 路由
+- SimpleReranker: 检索结果二次精排
+- 增强的混合检索管线
 
 Author: gngdingghuan
 """
@@ -22,6 +27,7 @@ except ImportError:
 from config import get_config
 from utils.logger import log
 from .graph_storage import GraphStorage
+from .embedding_router import EmbeddingRouter, SimpleReranker
 import uuid
 import asyncio
 
@@ -44,7 +50,7 @@ class MemoryManager:
     - 核心记忆：用户画像和关键事实 (Persistent)
     """
     
-    def __init__(self):
+    def __init__(self, llm_brain=None):
         self.config = get_config().memory
         
         # 短期记忆（内存中的对话历史）
@@ -57,6 +63,16 @@ class MemoryManager:
         
         # Holo-Mem L3: 知识图谱
         self.graph_storage = GraphStorage(self.config.graph_storage_path)
+        
+        # [NEW] Embedding 路由器
+        try:
+            self._embedding_router = EmbeddingRouter()
+        except Exception as e:
+            log.warning(f"EmbeddingRouter 初始化失败: {e}，使用 ChromaDB 内置")
+            self._embedding_router = EmbeddingRouter(provider="chromadb")
+        
+        # [NEW] Reranker
+        self._reranker = SimpleReranker(llm_brain=llm_brain)
         
         # 长期记忆（ChromaDB）
         self._chroma_client = None
@@ -310,7 +326,7 @@ class MemoryManager:
 
     async def retrieve_context_hybrid(self, query: str, limit: Optional[int] = None) -> List[str]:
         """
-        混合检索 (Hybrid Retrieval): Vector + Graph
+        混合检索 (Hybrid Retrieval): Vector + Graph + Reranker
         短查询和问候语自动跳过，避免不必要的向量搜索
         """
         # 短查询/问候语跳过检索
@@ -319,51 +335,76 @@ class MemoryManager:
             log.debug(f"短查询/问候跳过检索: '{query_stripped}'")
             return []
         
-        limit = limit or self.config.retrieval_k  # 使用全局配置
+        limit = limit or self.config.retrieval_k
         context_results = []
+        vector_docs = []
         
-        # 1. 向量检索
+        # 1. 向量检索 (粗检索，多取一些候选)
         if self._collection:
             try:
-                log.info(f"正在执行向量检索: query='{query[:50]}...', limit={limit}")
-                results = self._collection.query(
-                    query_texts=[query],
-                    n_results=limit,
-                    where=None # 不限类型，同时检索原始日志和摘要
-                )
+                coarse_limit = limit * 3  # 粗检索取 3 倍
+                log.info(f"正在执行向量检索: query='{query[:50]}...', coarse_limit={coarse_limit}")
+                
+                # [NEW] 使用自定义 embedding
+                query_kwargs = {"n_results": coarse_limit}
+                if self._embedding_router.provider != "chromadb":
+                    query_embedding = self._embedding_router.encode_single(query)
+                    if query_embedding:
+                        query_kwargs["query_embeddings"] = [query_embedding]
+                    else:
+                        query_kwargs["query_texts"] = [query]
+                else:
+                    query_kwargs["query_texts"] = [query]
+                
+                results = self._collection.query(**query_kwargs)
                 
                 if results['documents'] and results['documents'][0]:
                     count = len(results['documents'][0])
-                    log.info(f"向量检索命中 {count} 条记录")
-                    
-                    current_chars = 0
-                    MAX_CHARS = 20000  # 限制最大检索内容长度 (约 5k tokens)
+                    log.info(f"向量粗检索命中 {count} 条记录")
                     
                     for i, doc in enumerate(results['documents'][0]):
-                        if current_chars + len(doc) > MAX_CHARS:
-                            log.warning(f"检索内容达到安全限制 ({MAX_CHARS} 字符)，截断剩余 {count - i} 条记录")
-                            break
-                            
-                        context_results.append(f"[History] {doc}")
-                        current_chars += len(doc)
+                        distance = results['distances'][0][i] if results.get('distances') else 1.0
+                        vector_docs.append({
+                            "content": doc,
+                            "score": 1 / (1 + distance),
+                        })
                 else:
                     log.info("向量检索未找到匹配项")
                     
             except Exception as e:
                 log.error(f"向量检索失败: {e}")
+        
+        # [NEW] 2. Reranker 精排
+        if vector_docs and self._reranker:
+            try:
+                reranked = await self._reranker.rerank(query, vector_docs, top_k=limit)
+                vector_docs = reranked
+                log.info(f"Reranker 精排完成: {len(vector_docs)} 条记录")
+            except Exception as e:
+                log.debug(f"Reranker 精排失败: {e}，使用粗检索结果")
+                vector_docs = vector_docs[:limit]
+        else:
+            vector_docs = vector_docs[:limit]
+        
+        # 长度保护
+        current_chars = 0
+        MAX_CHARS = 20000
+        for doc in vector_docs:
+            text = doc.get("content", "")
+            if current_chars + len(text) > MAX_CHARS:
+                break
+            context_results.append(f"[History] {text}")
+            current_chars += len(text)
                 
-        # 2. 图谱检索 (关联挖掘)
-        # 简单提取查询中的名词作为实体锚点
+        # 3. 图谱检索 (关联挖掘)
         potential_entities = self.graph_storage.simple_search(query)
         
-        # 限制实体数量，防止上下文爆炸
         for entity in potential_entities[:3]: 
             neighbors = self.graph_storage.get_neighbors(entity, depth=1)
             for n in neighbors:
                 rel_str = f"{n['source']} --[{n['relation']}]--> {n['target']}"
                 context_results.append(f"[Graph] {rel_str}")
                 
-        # 去重
         return list(set(context_results))
 
     def get_interest_areas(self, limit: int = 5) -> List[str]:
@@ -497,7 +538,7 @@ class MemoryManager:
             log.error(f"恢复短期记忆失败: {e}")
 
     def _save_to_long_term(self, turn: ConversationTurn):
-        """保存到长期记忆（ChromaDB），带语义去重"""
+        """保存到长期记忆（ChromaDB），带语义去重和自定义 embedding"""
         if not self._collection:
             return
         
@@ -510,31 +551,38 @@ class MemoryManager:
                         n_results=1
                     )
                     if (existing['distances'] and existing['distances'][0] 
-                        and existing['distances'][0][0] < 0.15):  # L2 距离 < 0.15 视为重复
+                        and existing['distances'][0][0] < 0.15):
                         log.debug(f"语义去重: 跳过相似记忆 (distance={existing['distances'][0][0]:.3f})")
                         return
                 except Exception:
-                    pass  # 去重失败不影响存储
+                    pass
             
             doc_id = f"{turn.role}_{turn.timestamp}_{uuid.uuid4().hex[:4]}"
             
-            # 清理 metadata 中不兼容的类型
             clean_meta = {
                 "role": turn.role,
                 "timestamp": turn.timestamp,
                 "importance": turn.importance,
-                "access_count": 0,  # 用于评分算法
+                "access_count": 0,
             }
             if turn.metadata:
                 for k, v in turn.metadata.items():
                     if isinstance(v, (str, int, float, bool)):
                         clean_meta[k] = v
             
-            self._collection.add(
-                documents=[turn.content],
-                metadatas=[clean_meta],
-                ids=[doc_id]
-            )
+            # [NEW] 使用 EmbeddingRouter 生成自定义 embedding (如果非 chromadb 内置)
+            add_kwargs = {
+                "documents": [turn.content],
+                "metadatas": [clean_meta],
+                "ids": [doc_id],
+            }
+            
+            if self._embedding_router.provider != "chromadb":
+                embeddings = self._embedding_router.encode([turn.content])
+                if embeddings and embeddings[0]:
+                    add_kwargs["embeddings"] = embeddings
+            
+            self._collection.add(**add_kwargs)
             
         except Exception as e:
             log.error(f"保存到长期记忆失败: {e}")
@@ -546,17 +594,18 @@ class MemoryManager:
             for turn in self._short_term
         ]
 
-    def search_relevant(self, query: str, k: Optional[int] = None) -> List[Dict[str, Any]]:
+    def search_relevant(self, query: str, k: Optional[int] = None, use_reranker: bool = True) -> List[Dict[str, Any]]:
         """
-        语义搜索相关记忆（增强评分算法）
+        语义搜索相关记忆（增强评分 + Reranker 二次精排）
+        
+        管线: 粗检索 (top-N*5) → 评分排序 → Reranker 精排 (top-K)
         
         Score = Similarity*0.5 + Importance*0.25 + Recency*0.15 + AccessFreq*0.1
-        
-        使用指数衰减代替线性衰减，增加访问频率因子
         
         Args:
             query: 查询文本
             k: 返回数量
+            use_reranker: 是否使用 Reranker 精排
             
         Returns:
             相关记忆列表 (按综合得分排序)
@@ -565,20 +614,27 @@ class MemoryManager:
             return []
         
         k = k or self.config.retrieval_k
-        # 获取更多候选用于重排序
-        candidate_k = k * 3
+        # 粗检索更多候选
+        candidate_k = k * 5 if use_reranker else k * 3
         
         try:
-            results = self._collection.query(
-                query_texts=[query],
-                n_results=candidate_k
-            )
+            # [NEW] 使用自定义 embedding 查询 (如果非 chromadb 内置)
+            query_kwargs = {"n_results": candidate_k}
+            if self._embedding_router.provider != "chromadb":
+                query_embedding = self._embedding_router.encode_single(query)
+                if query_embedding:
+                    query_kwargs["query_embeddings"] = [query_embedding]
+                else:
+                    query_kwargs["query_texts"] = [query]
+            else:
+                query_kwargs["query_texts"] = [query]
+            
+            results = self._collection.query(**query_kwargs)
             
             candidates = []
             if results["documents"] and results["documents"][0]:
                 now = datetime.now()
                 
-                # 计算访问频率归一化参数
                 access_counts = []
                 for i in range(len(results["documents"][0])):
                     meta = results["metadatas"][0][i] if results["metadatas"] else {}
@@ -589,13 +645,9 @@ class MemoryManager:
                     meta = results["metadatas"][0][i] if results["metadatas"] else {}
                     distance = results["distances"][0][i] if results["distances"] else 1.0
                     
-                    # 1. 相似度 (L2 归一化)
                     similarity = 1 / (1 + distance)
-                    
-                    # 2. 重要性 (归一化到 0-1)
                     importance = float(meta.get("importance", 1.0)) / 10.0
                     
-                    # 3. 时效性 (指数衰减: exp(-λ * days), λ=0.1)
                     timestamp_str = meta.get("timestamp", now.isoformat())
                     try:
                         record_time = datetime.fromisoformat(timestamp_str)
@@ -604,10 +656,8 @@ class MemoryManager:
                     except:
                         recency = 0.5
                     
-                    # 4. 访问频率 (归一化到 0-1)
                     access_freq = float(meta.get("access_count", 0)) / max_access if max_access > 0 else 0
                     
-                    # 综合评分 (优化权重分配)
                     final_score = (
                         similarity * 0.50 +
                         importance * 0.25 +
@@ -623,17 +673,114 @@ class MemoryManager:
                         "doc_id": results["ids"][0][i] if results.get("ids") else None
                     })
             
-            # 按最终得分排序
+            # 按评分排序
             candidates.sort(key=lambda x: x["score"], reverse=True)
             
-            # 更新被检索记忆的访问计数
-            top_results = candidates[:k]
-            self._increment_access_counts(top_results)
+            # [NEW] Reranker 二次精排
+            if use_reranker and self._reranker and len(candidates) > k:
+                try:
+                    # 取评分前 k*3 送入 reranker
+                    pre_rerank = candidates[:k * 3]
+                    reranked = asyncio.get_event_loop().run_until_complete(
+                        self._reranker.rerank(query, pre_rerank, top_k=k)
+                    ) if not asyncio.get_event_loop().is_running() else pre_rerank[:k]
+                    # 注: 如果在异步上下文中调用，reranker 需要 await
+                    top_results = reranked
+                except Exception as e:
+                    log.debug(f"Reranker 回退: {e}")
+                    top_results = candidates[:k]
+            else:
+                top_results = candidates[:k]
             
+            self._increment_access_counts(top_results)
             return top_results
             
         except Exception as e:
             log.error(f"语义搜索失败: {e}")
+            return []
+    
+    async def search_relevant_async(self, query: str, k: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        异步版语义搜索（支持 reranker await）
+        """
+        if not self._collection:
+            return []
+        
+        k = k or self.config.retrieval_k
+        candidate_k = k * 5
+        
+        try:
+            query_kwargs = {"n_results": candidate_k}
+            if self._embedding_router.provider != "chromadb":
+                query_embedding = self._embedding_router.encode_single(query)
+                if query_embedding:
+                    query_kwargs["query_embeddings"] = [query_embedding]
+                else:
+                    query_kwargs["query_texts"] = [query]
+            else:
+                query_kwargs["query_texts"] = [query]
+            
+            results = self._collection.query(**query_kwargs)
+            
+            candidates = []
+            if results["documents"] and results["documents"][0]:
+                now = datetime.now()
+                
+                access_counts = [float(
+                    (results["metadatas"][0][i] if results["metadatas"] else {}).get("access_count", 0)
+                ) for i in range(len(results["documents"][0]))]
+                max_access = max(access_counts) if access_counts and max(access_counts) > 0 else 1.0
+                
+                for i, doc in enumerate(results["documents"][0]):
+                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
+                    distance = results["distances"][0][i] if results["distances"] else 1.0
+                    
+                    similarity = 1 / (1 + distance)
+                    importance = float(meta.get("importance", 1.0)) / 10.0
+                    
+                    timestamp_str = meta.get("timestamp", now.isoformat())
+                    try:
+                        record_time = datetime.fromisoformat(timestamp_str)
+                        days_diff = max(0, (now - record_time).total_seconds() / 86400)
+                        recency = math.exp(-0.1 * days_diff)
+                    except:
+                        recency = 0.5
+                    
+                    access_freq = float(meta.get("access_count", 0)) / max_access if max_access > 0 else 0
+                    
+                    final_score = (
+                        similarity * 0.50 +
+                        importance * 0.25 +
+                        recency * 0.15 +
+                        access_freq * 0.10
+                    )
+                    
+                    candidates.append({
+                        "content": doc,
+                        "metadata": meta,
+                        "score": final_score,
+                        "raw_distance": distance,
+                        "doc_id": results["ids"][0][i] if results.get("ids") else None,
+                    })
+            
+            candidates.sort(key=lambda x: x["score"], reverse=True)
+            
+            # [NEW] 异步 Reranker
+            if self._reranker and len(candidates) > k:
+                try:
+                    reranked = await self._reranker.rerank(query, candidates[:k * 3], top_k=k)
+                    top_results = reranked
+                except Exception as e:
+                    log.debug(f"Reranker 回退: {e}")
+                    top_results = candidates[:k]
+            else:
+                top_results = candidates[:k]
+            
+            self._increment_access_counts(top_results)
+            return top_results
+            
+        except Exception as e:
+            log.error(f"异步语义搜索失败: {e}")
             return []
     
     def _increment_access_counts(self, results: List[Dict[str, Any]]):
