@@ -1,0 +1,60 @@
+#!/usr/bin/expect -f
+# SSH自动登录脚本 - 47.97.113.144
+
+set timeout 30
+set server "47.97.113.144"
+set user "root"
+set password "zXc363324112"
+set port "222"
+
+# 尝试SSH连接
+spawn ssh -p $port $user@$server
+
+# 处理密码提示
+expect {
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "Permission denied" {
+        puts "SSH认证失败：密码错误或端口错误"
+        exit 1
+    }
+    timeout {
+        puts "SSH连接超时：端口 $port 可能不可用"
+        exit 1
+    }
+    eof {
+        puts "SSH连接已关闭"
+    }
+}
+
+# 如果连接成功，执行基本命令
+expect {
+    -re "#|\\$" {
+        puts "=== SSH连接成功 ==="
+        
+        # 执行系统信息检查
+        send "echo '=== 系统信息 ==='\r"
+        send "hostname && uname -a\r"
+        
+        send "echo '=== 系统负载 ==='\r"
+        send "uptime\r"
+        
+        send "echo '=== 内存使用 ==='\r"
+        send "free -h\r"
+        
+        send "echo '=== 磁盘使用 ==='\r"
+        send "df -h\r"
+        
+        send "echo '=== CPU使用率 ==='\r"
+        send "top -bn1 | head -20\r"
+        
+        send "exit\r"
+        expect eof
+    }
+}

@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# 自动配置SSH密钥认证的Expect脚本
+
+set timeout 30
+
+# 配置参数
+set server "47.97.113.144"
+set port "222"
+set user "root"
+set password "zXc363324112"
+
+# 密钥内容（从私钥导出的公钥）
+set public_key "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCyB43w7qybi60hNX2e7hx5G28wKX7ZFzH9Qqo4vOKwNaBQeEHy7+mfXC94a8TXnBJEvO5IIgYQqsVy/Sd9HUqG7yJenSK6WnEKEfeBkIolF2gTMOVqEAfuMXd76urBDjGv25K8XhQYv3puZB2whUCKg2zMULK7j7FRs2kfOGr29MVvQlLr5F9x0jT8j5SrQMIFA1Qmhvv+yRyPHjtK7/ND7XhdDS7jtDPJNUmjEx9QwXMNnKk51jFH6nb4hRxZFGHOY6MuwPghHFjvFCV7XgjDHtCCLMbuovFadYbMihrd7EMbhx+g62guh4NgiMS1ytC8xTL1E9rtVpnBaKYTHxF85Rd1ulvVjbtsxx7cafNAXPA7KiJjJbEzRGpFY8KUmDGcVsDy0rcGXnKCR5U9nr+kT5RkXHfBz7SliIxLZsW9Cv0bVYIpkJN8AqW9hJStcwnVFAqFavWzc8vgZ3pojm9qLY1srV5wLLdAjhH99dg9AzRoJaPA+tEYNkPOhEoMnQirgTwd5pINLYfGUf+0p0KKt5AYlxqoNpiYnrTxz5AgThAxMpc9JFpzDMXCLN4sOn8nbk774dX82ssWo9UDCS1Q325ah4nU+mhby2ACcXMnLXjMOcx+ATWDCq4K9UF3vi4LIJa1YNBtTYBi8cEzTacig4ODN4rMHIAxrD5YrZSvew== gong363324112@qq.com"
+
+spawn ssh -p $port $user@$server
+
+# 等待密码提示
+expect {
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "password:" {
+        send "$password\r"
+    }
+}
+
+# 等待shell提示符
+expect "#"
+
+# 配置SSH密钥认证
+send "mkdir -p ~/.ssh\r"
+expect "#"
+
+send "chmod 700 ~/.ssh\r"
+expect "#"
+
+send "echo '$public_key' >> ~/.ssh/authorized_keys\r"
+expect "#"
+
+send "chmod 600 ~/.ssh/authorized_keys\r"
+expect "#"
+
+send "systemctl restart sshd\r"
+expect "#"
+
+# 测试配置
+send "echo '=== 密钥配置完成 ===' && cat ~/.ssh/authorized_keys\r"
+expect "#"
+
+# 保持会话
+interact
