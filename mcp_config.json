@@ -1,0 +1,30 @@
+{
+    "mcpServers": [
+        {
+            "name": "filesystem",
+            "transport": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                "C:\\Users\\Administrator\\Desktop"
+            ],
+            "enabled": false,
+            "timeout": 30.0
+        },
+        {
+            "name": "brave-search",
+            "transport": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-brave-search"
+            ],
+            "env": {
+                "BRAVE_API_KEY": ""
+            },
+            "enabled": false,
+            "timeout": 30.0
+        }
+    ]
+}

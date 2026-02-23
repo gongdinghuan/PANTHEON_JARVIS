@@ -1,8 +1,14 @@
 # JARVIS 依赖清单
+# ================================================
 
-# LLM & Agent
+# LLM & Agent 核心
 openai>=1.0.0
+httpx
+pydantic>=2.0.0
+
+# 向量记忆 & 图谱
 chromadb>=0.4.0
+networkx>=3.0
 
 # 语音处理
 openai-whisper
@@ -15,35 +21,40 @@ torchaudio
 edge-tts
 pygame
 
-# 视觉
+# 视觉 & 截屏
 pyautogui
 mss
 Pillow
 
-# Web
+# Web 搜索 & 爬虫
 duckduckgo-search
-httpx
 beautifulsoup4
 playwright
+googlesearch-python
 
-# 服务器
+# 服务器 & API
 fastapi
 uvicorn[standard]
 websockets
+python-multipart          # FastAPI 文件上传 (UploadFile)
 
 # 系统控制
 pywin32; sys_platform == 'win32'
 psutil
 pyperclip
 
-# 工具
-pydantic>=2.0.0
+# 工具库
 python-dotenv
 loguru
+rich
+pytz
 
 # 金融分析
 longport
-googlesearch-python
 
-# 终端美化
-rich
+# 代码解释器
+jupyter_client
+ipykernel
+
+# 嵌入模型 (onnxruntime 需要 VC++ Redistributable)
+onnxruntime>=1.17.0

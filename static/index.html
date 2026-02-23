@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JARVIS AI | Neural Interface</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link
@@ -73,7 +73,17 @@
                 <div class="typing-indicator" id="typingIndicator" style="display: none;">
                     <span></span><span></span><span></span>
                 </div>
+                <!-- Image Preview Strip -->
+                <div class="image-preview-strip" id="imagePreviewStrip" style="display: none;"></div>
                 <div class="input-wrapper">
+                    <button class="upload-btn" id="uploadBtn" title="Upload Image">
+                        <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+                            <path
+                                d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                    <input type="file" id="imageFileInput" accept="image/*,.heic,.heif" multiple style="display: none;">
                     <input type="text" id="messageInput" placeholder="Enter command or query..." autocomplete="off">
                     <button class="send-btn" id="sendBtn">
                         <svg viewBox="0 0 24 24" fill="none" class="send-icon">

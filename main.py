@@ -55,6 +55,7 @@ from skills.code_interpreter import CodeInterpreterSkill
 from skills.email_skill import EmailSkill
 from skills.image_generation import ImageGenerationSkill
 from skills.browser_automation import BrowserAutomationSkill
+from skills.mcp_client import MCPClient
 from adapters import AdapterManager
 from adapters.qq_adapter import QQAdapter
 from expression.tts import TTS
@@ -142,6 +143,10 @@ class Jarvis:
         # 设置确认回调
         self.planner.set_confirmation_callback(self._handle_confirmation)
         
+        # MCP 客户端 (加载配置，连接在 initialize() 中执行)
+        self.mcp_client = MCPClient()
+        self._init_mcp()
+        
         # 传递系统信息和时间信息给大脑中枢
         self._inform_brain_system_info()
         
@@ -188,6 +193,19 @@ class Jarvis:
                     console.print(f"[green][OK] IM 适配器已启动: {a['name']}[/green]")
         except Exception as e:
             log.warning(f"启动 IM 适配器时出错: {e}")
+        
+        # 连接 MCP Servers 并注册工具
+        try:
+            if self.mcp_client._connections:
+                console.print("[dim]正在连接 MCP Servers...[/dim]")
+                await self.mcp_client.connect_all()
+                mcp_skills = self.mcp_client.get_skills()
+                for name, skill in mcp_skills.items():
+                    self.planner.register_skill(name, skill)
+                if mcp_skills:
+                    console.print(f"[green][OK] MCP: 已注册 {len(mcp_skills)} 个外部工具[/green]")
+        except Exception as e:
+            log.warning(f"MCP 连接失败 (非致命): {e}")
     
     async def cleanup(self):
         """清理资源"""
@@ -233,6 +251,13 @@ class Jarvis:
             await self.brain.close()
         except Exception as e:
             log.warning(f"关闭 LLM Brain 时出错: {e}")
+        
+        try:
+            # 断开 MCP 连接
+            if self.mcp_client and self.mcp_client._connections:
+                await self.mcp_client.disconnect_all()
+        except Exception as e:
+            log.warning(f"断开 MCP 连接时出错: {e}")
         
         try:
             # 停止 IM 适配器
@@ -330,6 +355,28 @@ class Jarvis:
             except Exception as e:
                 log.error(f"初始化 QQ 适配器失败: {e}")
     
+    def _init_mcp(self):
+        """从配置文件加载 MCP Server 定义"""
+        config_path = Path("mcp_config.json")
+        if not config_path.exists():
+            log.debug("未找到 mcp_config.json，跳过 MCP 配置加载")
+            return
+        
+        try:
+            import json as _json
+            with open(config_path, "r", encoding="utf-8") as f:
+                mcp_cfg = _json.load(f)
+            
+            servers = mcp_cfg.get("mcpServers", [])
+            if servers:
+                self.mcp_client.load_config(servers)
+                enabled_count = sum(
+                    1 for s in servers if s.get("enabled", True)
+                )
+                console.print(f"[dim]  MCP: 已加载 {enabled_count} 个服务器配置[/dim]")
+        except Exception as e:
+            log.warning(f"加载 MCP 配置失败: {e}")
+    
     def _inform_brain_system_info(self):
         """通知大脑中枢当前系统信息和时间"""
         # 构建系统信息提示
@@ -382,13 +429,14 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
         except Exception as e:
             log.error(f"进化反馈处理失败: {e}")
     
-    async def process(self, user_input: str, user_id: str = "default") -> Any:
+    async def process(self, user_input: str, user_id: str = "default", images: list = None) -> Any:
         """
         处理用户输入
         
         Args:
             user_input: 用户输入文本
             user_id: 用户标识 (IP 地址)
+            images: 图片路径/URL 列表 (用于多模态对话)
             
         Returns:
             AI 回复
@@ -405,8 +453,10 @@ JARVIS 在处理命令时会根据当前操作系统和时间做出合适的响�
         # 更新上下文
         self.context.set_current_task(user_input[:50])
         
-        # 使用规划器处理
-        plan_result = await self.planner.plan_and_execute(user_input)
+        # 使用规划器处理 (传入图片用于多模态理解)
+        plan_result = await self.planner.plan_and_execute(
+            user_input, user_id=user_id, images=images
+        )
         
         # 处理返回结果
         if isinstance(plan_result, dict) and "content" in plan_result:

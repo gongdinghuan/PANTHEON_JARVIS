@@ -1,6 +1,11 @@
 """
-JARVIS Web UI 服务器
+JARVIS Web UI 服务器 v3.0
 FastAPI + WebSocket 实现 J.A.R.V.I.S. 风格的 Web 界面
+
+升级特性:
+- 文件上传支持 (多模态对话)
+- Streaming 全链路事件推送 (thinking / tool_start / tool_result)
+- MCP 状态接口
 
 Author: gngdingghuan
 """
@@ -11,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +26,7 @@ from utils.logger import log
 from cognitive.session_manager import get_session_manager, UserSessionManager
 
 # 创建 FastAPI 应用
-app = FastAPI(title="JARVIS AI Assistant", version="1.0.0")
+app = FastAPI(title="JARVIS AI Assistant", version="3.0.0")
 
 # 获取配置
 config = get_config()
@@ -49,6 +54,11 @@ app.mount("/reports", StaticFiles(directory=str(reports_dir)), name="reports")
 images_dir = Path("generated_images")
 images_dir.mkdir(exist_ok=True)
 app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
+
+# [NEW] 挂载上传文件目录
+uploads_dir = Path("uploads")
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 # 全局 JARVIS 实例（将在 main.py 中设置）
 jarvis_instance = None
@@ -513,6 +523,64 @@ async def search_memory(request: Dict[str, Any]):
         return {"success": False, "error": str(e)}
 
 
+# ----------------------------------------------------------------
+# [NEW] 文件上传 API
+# ----------------------------------------------------------------
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """上传文件 (用于多模态对话，如图片理解)"""
+    try:
+        import uuid as _uuid
+        # 生成唯一文件名
+        ext = Path(file.filename).suffix if file.filename else ".bin"
+        unique_name = f"{_uuid.uuid4().hex[:8]}{ext}"
+        save_path = uploads_dir / unique_name
+        
+        # 保存文件
+        contents = await file.read()
+        with open(save_path, "wb") as f:
+            f.write(contents)
+        
+        # 判断是否为图片
+        image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic", ".heif"}
+        is_image = ext.lower() in image_exts
+        
+        return {
+            "success": True,
+            "filename": unique_name,
+            "original_name": file.filename,
+            "url": f"/uploads/{unique_name}",
+            "path": str(save_path.resolve()),
+            "is_image": is_image,
+            "size": len(contents),
+        }
+    except Exception as e:
+        log.error(f"文件上传失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ----------------------------------------------------------------
+# [NEW] MCP 状态接口
+# ----------------------------------------------------------------
+
+@app.get("/api/mcp/status")
+async def get_mcp_status():
+    """获取 MCP 服务器状态"""
+    if not jarvis_instance:
+        return {"error": "JARVIS 未初始化"}
+    
+    try:
+        if hasattr(jarvis_instance, 'mcp_client') and jarvis_instance.mcp_client:
+            return {
+                "success": True,
+                "servers": jarvis_instance.mcp_client.get_status(),
+            }
+        return {"success": True, "servers": {}, "message": "MCP 未配置"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.on_event("startup")
 async def startup_event():
     """服务器启动时的初始化"""
@@ -631,14 +699,33 @@ async def websocket_endpoint(websocket: WebSocket):
             if data.get("type") == "chat":
                 # 处理聊天消息
                 message = data.get("message", "")
+                images = data.get("images", [])  # [NEW] 图片路径列表 (用于多模态)
+                stream = data.get("stream", False)  # [NEW] 是否流式
+                
                 if message and jarvis_instance:
                     try:
-                        # 记录用户消息到会话
                         session.add_message("user", message)
                         session.touch()
                         
-                        # 处理消息 (传入 user_id)
-                        response = await jarvis_instance.process(message, user_id=user_id)
+                        # [NEW] 流式事件回调 — 将 planner 事件转发到 WebSocket
+                        async def ws_event_callback(event_type: str, event_data: dict):
+                            try:
+                                await websocket.send_json({
+                                    "type": event_type,
+                                    **event_data,
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                            except Exception:
+                                pass
+                        
+                        # 注册事件回调
+                        if hasattr(jarvis_instance.planner, 'set_event_callback'):
+                            jarvis_instance.planner.set_event_callback(ws_event_callback)
+                        
+                        # 处理消息
+                        response = await jarvis_instance.process(
+                            message, user_id=user_id, images=images
+                        )
                         
                         # 记录助手回复
                         if isinstance(response, dict):

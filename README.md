@@ -2,6 +2,25 @@
 
 一个类似钢铁侠 J.A.R.V.I.S. 的智能 AI 助手，基于 Python 实现。
 
+## 核心特性 (v5.0)
+
+### 👁️ 多模态视觉理解 `NEW`
+- **两阶段视觉管线**: 专用视觉模型分析图片 → 文本描述注入主模型 → 结合用户问题回答
+- **专用模型配置**: 视觉模型独立于主 LLM，通过 `VISION_*` 环境变量配置（默认 `glm-4v-flash`）
+- **自动回退**: 未配置专用模型时，自动回退到主 LLM 的 Vision 模式
+- **前端图片上传**: 支持 📎 按钮选择、拖拽上传、Ctrl+V 粘贴，带预览缩略图
+
+### 🔌 MCP 协议支持 `NEW`
+- **Model Context Protocol**: 连接外部 MCP Server，动态发现并注册工具
+- **双传输协议**: 支持 `stdio`（子进程）和 `sse`（HTTP SSE）两种连接方式
+- **配置文件**: 通过 `mcp_config.json` 管理多个 MCP Server
+- **热插拔**: MCP 工具自动包装为 JARVIS 技能，无需修改代码
+
+### 📡 实时流式事件 `NEW`
+- **Thinking 可视化**: LLM 推理过程实时推送到前端
+- **工具执行追踪**: Tool Start / Tool Result 事件实时显示
+- **Plan-and-Execute**: 复杂任务分解步骤实时反馈
+
 ## 核心特性 (v2.0)
 
 ### 🧠 Holo-Mem 仿生记忆
@@ -115,26 +134,31 @@ JARVIS: 为您搜索到以下结果：
 ```
 JARVIS/
 ├── main.py                   # 主入口 (CLI/Voice/Web)
-├── config.py                 # 全局配置
+├── config.py                 # 全局配置 (含 VisionConfig)
+├── mcp_config.json           # MCP Server 配置 [NEW]
 ├── cognitive/                # 中枢层 (Brain)
-│   ├── llm_brain.py          # LLM 统一接口
+│   ├── llm_brain.py          # LLM 统一接口 + VisionAnalyzer [NEW]
 │   ├── memory.py             # Memory 2.0 (Vector+Graph)
-│   ├── graph_storage.py      # L3 语义图谱存储 [NEW]
-│   ├── planner.py            # ReAct 规划器 (带经验注入)
+│   ├── graph_storage.py      # L3 语义图谱存储
+│   ├── planner.py            # ReAct 规划器 (多模态+经验注入)
 │   ├── self_evolution.py     # 进化引擎 (经验学习)
 │   ├── continuous_evolution.py # 持续进化引擎 (后台学习)
 │   └── heartbeat.py          # 心跳引擎 (Time-aware)
 ├── skills/                   # 技能层 (Skills)
+│   ├── mcp_client.py         # MCP 协议客户端 [NEW]
 │   ├── system_control.py     # 系统控制
 │   ├── file_manager.py       # 文件管理
 │   ├── web_browser.py        # 网页浏览
 │   ├── scheduler.py          # 智能调度 (升级版)
-│   ├── longport_skill.py     # 金融分析 (LongPort) [NEW]
+│   ├── longport_skill.py     # 金融分析 (LongPort)
 │   ├── code_interpreter.py   # 代码解释器
 │   └── image_generation.py   # 图像生成
 ├── static/                   # Web 资源
-│   ├── js/                   # ECharts & App Logic
-│   └── css/                  # Styles
+│   ├── index.html            # 主页面 (含图片上传 UI)
+│   ├── js/app.js             # 前端逻辑 (上传+流式事件)
+│   └── css/style.css         # 样式
+├── adapters/                 # IM 适配器层
+│   └── qq_adapter.py         # QQ (OneBot 11)
 └── security/                 # 安全层
     └── confirmation.py       # 危险操作拦截
 ```
@@ -190,6 +214,18 @@ pip install "numpy<2"
 ### 3. ChromaDB 初始化失败
 错误信息：`'type' object is not subscriptable`
 **解决**：这是 Python 3.8 的兼容性问题，建议升级到 Python 3.9+ (推荐 3.11)。
+
+## 环境变量说明
+
+### 视觉模型配置
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `VISION_ENABLED` | 启用专用视觉模型 | `true` |
+| `VISION_PROVIDER` | 视觉模型提供商 | `openai` |
+| `VISION_API_KEY` | 视觉模型 API Key | — |
+| `VISION_BASE_URL` | 视觉模型 API 地址 | — |
+| `VISION_MODEL` | 视觉模型名称 | `gpt-4o` |
+| `VISION_DETAIL` | 图片分析精度 (low/high/auto) | `high` |
 
 ## License
 

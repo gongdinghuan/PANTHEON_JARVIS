@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "updated": "2026-02-13T04:02:15.706901",
+  "nodes": [
+    {
+      "id": "086edb447ede",
+      "title": "Technical Indicators",
+      "category": "trading",
+      "description": "Financial analysis: Technical Indicators",
+      "concepts": [
+        "MA",
+        "EMA",
+        "MACD",
+        "RSI",
+        "Bollinger Bands",
+        "ATR"
+      ],
+      "skills": [
+        "Calculate indicators",
+        "Generate signals",
+        "Backtest strategies"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-13T04:02:15.706901",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-13T04:02:15.706901"
+    },
+    {
+      "id": "ce64af33d01c",
+      "title": "Portfolio Optimization",
+      "category": "investment",
+      "description": "Financial analysis: Portfolio Optimization",
+      "concepts": [
+        "Mean-Variance",
+        "Efficient Frontier",
+        "CAPM",
+        "Risk Parity"
+      ],
+      "skills": [
+        "Optimize weights",
+        "Calculate risk-return",
+        "Factor analysis"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-13T04:02:15.706901",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-13T04:02:15.706901"
+    },
+    {
+      "id": "7228bb53bb78",
+      "title": "Risk Management",
+      "category": "trading",
+      "description": "Financial analysis: Risk Management",
+      "concepts": [
+        "VaR",
+        "CVaR",
+        "Drawdown",
+        "Position Sizing",
+        "Stop Loss"
+      ],
+      "skills": [
+        "Calculate VaR",
+        "Monitor drawdown",
+        "Set position sizes"
+      ],
+      "difficulty": "intermediate",
+      "created_at": "2026-02-13T04:02:15.706901",
+      "mastery": 0.5,
+      "reviews": 1,
+      "last_review": "2026-02-13T04:02:15.706901"
+    }
+  ],
+  "edges": [],
+  "categories": {
+    "trading": [
+      "086edb447ede",
+      "7228bb53bb78"
+    ],
+    "investment": [
+      "ce64af33d01c"
+    ]
+  }
+}

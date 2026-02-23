@@ -1,0 +1,42 @@
+# JARVIS AI Assistant - Docker Compose
+version: "3.8"
+
+services:
+  jarvis:
+    build: .
+    container_name: jarvis-assistant
+    ports:
+      - "${SERVER_PORT:-8765}:8765"
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./generated_images:/app/generated_images
+      - ./uploads:/app/uploads
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+    depends_on:
+      - chromadb
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: jarvis-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+
+volumes:
+  chroma-data:
+
+networks:
+  jarvis-network:
+    driver: bridge

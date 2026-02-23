@@ -5,6 +5,7 @@ class JarvisApp {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.isProcessing = false;
+        this.pendingImages = [];  // [{path, url, name}]
 
         // DOM Elements cache
         this.els = {
@@ -17,7 +18,10 @@ class JarvisApp {
             cpuBar: document.querySelector('.cpu-bar'),
             memBar: document.querySelector('.mem-bar'),
             taskStatus: document.getElementById('taskStatus'),
-            taskName: document.getElementById('currentTaskName')
+            taskName: document.getElementById('currentTaskName'),
+            uploadBtn: document.getElementById('uploadBtn'),
+            imageFileInput: document.getElementById('imageFileInput'),
+            imagePreviewStrip: document.getElementById('imagePreviewStrip'),
         };
 
         this.init();
@@ -148,6 +152,9 @@ class JarvisApp {
             case 'chat':
                 this.isProcessing = false;
                 this.removeLoadingIndicator();
+                // Remove stream bubble if exists
+                const streamBubble = document.getElementById('streamBubble');
+                if (streamBubble) streamBubble.remove();
                 this.addJarvisMessage(data.response);
                 break;
             case 'status':
@@ -159,8 +166,29 @@ class JarvisApp {
                 this.addSystemMessage(`ERROR: ${data.message}`, 'error');
                 this.logSystem('ERR', data.message, 'error');
                 break;
-            case 'thinking': // Optional: Log thought process
-                this.logSystem('THOUGHT', data.message, 'info');
+            case 'thinking':
+                this.updateOrCreateStreamBubble('thinking', data.content || data.message || '');
+                this.logSystem('THINK', (data.content || '').substring(0, 60), 'info');
+                break;
+            case 'tool_start':
+                this.addSystemMessage(`🔧 Executing: <b>${data.name}</b>`, 'info');
+                this.logSystem('TOOL', `Start: ${data.name}`, 'info');
+                break;
+            case 'tool_result':
+                const icon = data.success ? '✅' : '❌';
+                this.logSystem('TOOL', `${icon} ${data.name}: ${data.output_preview || (data.success ? 'OK' : 'Failed')}`, data.success ? 'success' : 'error');
+                break;
+            case 'planning':
+                this.logSystem('PLAN', `Complexity: ${data.complexity}`, 'info');
+                break;
+            case 'step_start':
+                this.logSystem('STEP', `▶ ${data.desc || data.id}`, 'info');
+                break;
+            case 'step_complete':
+                this.logSystem('STEP', `✓ ${data.id} (${data.duration || 0}s)`, 'success');
+                break;
+            case 'log':
+                this.logSystem(data.level || 'SYS', data.message, data.level?.toLowerCase() || 'info');
                 break;
         }
     }
@@ -170,13 +198,21 @@ class JarvisApp {
         if (!message || this.isProcessing) return;
 
         this.isProcessing = true;
-        this.addUserMessage(message);
+        this.addUserMessage(message, this.pendingImages);
         this.els.messageInput.value = '';
         this.showLoadingIndicator();
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'chat', message: message }));
-            this.logSystem('USER', `Sent: ${message.substring(0, 20)}...`, 'info');
+            const payload = { type: 'chat', message: message };
+            // Attach image paths if any
+            if (this.pendingImages.length > 0) {
+                payload.images = this.pendingImages.map(img => img.path);
+            }
+            this.ws.send(JSON.stringify(payload));
+            this.logSystem('USER', `Sent: ${message.substring(0, 20)}...${this.pendingImages.length ? ` +${this.pendingImages.length} img` : ''}`, 'info');
+            // Clear pending images
+            this.pendingImages = [];
+            this.updateImagePreview();
         } else {
             this.isProcessing = false;
             this.removeLoadingIndicator();
@@ -205,10 +241,23 @@ class JarvisApp {
     }
 
     /* --- Renderers --- */
-    addUserMessage(content) {
+    addUserMessage(content, images = []) {
         const div = document.createElement('div');
         div.className = 'message user-message';
-        div.textContent = content; // Text only for user to prevent XSS
+        div.textContent = content;
+        // Show uploaded image thumbnails in user message
+        if (images && images.length > 0) {
+            const strip = document.createElement('div');
+            strip.className = 'user-images-strip';
+            images.forEach(img => {
+                const thumb = document.createElement('img');
+                thumb.src = img.url;
+                thumb.alt = img.name || 'Image';
+                thumb.className = 'user-msg-thumb';
+                strip.appendChild(thumb);
+            });
+            div.appendChild(strip);
+        }
         this.els.chatMessages.appendChild(div);
         this.scrollToBottom();
     }
@@ -237,11 +286,14 @@ class JarvisApp {
                     return `<a href="${cleanHref}" title="${cleanTitle}" target="_blank" rel="noopener noreferrer">${cleanText}</a>`;
                 };
 
-                // Parse
-                div.innerHTML = marked.parse(content, { renderer: renderer });
+                // Wrapper for styles
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'markdown-content';
+                contentDiv.innerHTML = marked.parse(content, { renderer: renderer });
+                div.appendChild(contentDiv);
 
                 // Fallback: If renderer fails, do post-processing for safety
-                div.querySelectorAll('a').forEach(a => {
+                contentDiv.querySelectorAll('a').forEach(a => {
                     if (!a.getAttribute('target')) {
                         a.setAttribute('target', '_blank');
                         a.setAttribute('rel', 'noopener noreferrer');
@@ -273,6 +325,44 @@ class JarvisApp {
         // Process visualizations if any
         if (response.visualizations) {
             response.visualizations.forEach(viz => this.renderViz(div, viz));
+        }
+
+        // Process attachments if any
+        if (response.attachments) {
+            const attachmentContainer = document.createElement('div');
+            attachmentContainer.className = 'attachment-container';
+            attachmentContainer.style.marginTop = '10px';
+            attachmentContainer.style.display = 'flex';
+            attachmentContainer.style.flexWrap = 'wrap';
+            attachmentContainer.style.gap = '10px';
+
+            response.attachments.forEach(att => {
+                if (att.type === 'image') {
+                    // Extract filename from path (handle both Windows and Unix separators)
+                    const filename = att.path.split(/[/\\]/).pop();
+                    const imageUrl = `/images/${filename}`;
+
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'image-attachment';
+
+                    const img = document.createElement('img');
+                    img.src = imageUrl;
+                    img.alt = att.title || 'Screenshot';
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '300px';
+                    img.style.borderRadius = '8px';
+                    img.style.border = '1px solid #333';
+                    img.style.cursor = 'pointer';
+                    img.onclick = () => window.open(imageUrl, '_blank');
+
+                    imgContainer.appendChild(img);
+                    attachmentContainer.appendChild(imgContainer);
+                }
+            });
+
+            if (attachmentContainer.children.length > 0) {
+                div.appendChild(attachmentContainer);
+            }
         }
 
         this.scrollToBottom();
@@ -357,8 +447,138 @@ class JarvisApp {
             this.addSystemMessage("Buffer Purged.");
         });
 
+        // [NEW] Image Upload
+        this.els.uploadBtn?.addEventListener('click', () => {
+            this.els.imageFileInput?.click();
+        });
+        this.els.imageFileInput?.addEventListener('change', (e) => {
+            this.handleImageUpload(e.target.files);
+            e.target.value = ''; // Reset so same file can be re-selected
+        });
+
+        // [NEW] Drag & Drop on chat area
+        this.els.chatMessages?.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.add('drag-over');
+        });
+        this.els.chatMessages?.addEventListener('dragleave', (e) => {
+            e.currentTarget.classList.remove('drag-over');
+        });
+        this.els.chatMessages?.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            if (files.length > 0) this.handleImageUpload(files);
+        });
+
+        // [NEW] Paste image from clipboard
+        document.addEventListener('paste', (e) => {
+            const items = Array.from(e.clipboardData?.items || []);
+            const imageItems = items.filter(item => item.type.startsWith('image/'));
+            if (imageItems.length > 0) {
+                const files = imageItems.map(item => item.getAsFile()).filter(Boolean);
+                this.handleImageUpload(files);
+            }
+        });
+
         // Polling
         setInterval(() => this.requestSystemStatus(), 5000);
+    }
+
+    /* --- [NEW] Image Upload (Mobile-compatible) --- */
+    async handleImageUpload(files) {
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+        const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'];
+
+        for (const file of files) {
+            // iOS Safari may report empty type for HEIC — check extension as fallback
+            const ext = (file.name || '').toLowerCase().split('.').pop();
+            const isImage = file.type.startsWith('image/') || IMAGE_EXTENSIONS.includes('.' + ext);
+            if (!isImage) continue;
+
+            // File size check
+            if (file.size > MAX_FILE_SIZE) {
+                this.logSystem('UPLOAD', `File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB, max 10MB)`, 'error');
+                continue;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!resp.ok) {
+                    this.logSystem('UPLOAD', `Server error: ${resp.status}`, 'error');
+                    continue;
+                }
+                const data = await resp.json();
+
+                if (data.success) {
+                    this.pendingImages.push({
+                        path: data.path,
+                        url: data.url,
+                        name: data.original_name || file.name,
+                    });
+                    this.updateImagePreview();
+                    this.logSystem('UPLOAD', `Image uploaded: ${file.name}`, 'success');
+                } else {
+                    this.logSystem('UPLOAD', `Failed: ${data.error || 'Unknown'}`, 'error');
+                }
+            } catch (err) {
+                this.logSystem('UPLOAD', `Error: ${err.message}`, 'error');
+            }
+        }
+    }
+
+    updateImagePreview() {
+        const strip = this.els.imagePreviewStrip;
+        if (!strip) return;
+
+        strip.innerHTML = '';
+        if (this.pendingImages.length === 0) {
+            strip.style.display = 'none';
+            return;
+        }
+
+        strip.style.display = 'flex';
+        this.pendingImages.forEach((img, idx) => {
+            const item = document.createElement('div');
+            item.className = 'preview-item';
+
+            const thumb = document.createElement('img');
+            thumb.src = img.url;
+            thumb.alt = img.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'preview-remove';
+            removeBtn.textContent = '×';
+            removeBtn.onclick = () => {
+                this.pendingImages.splice(idx, 1);
+                this.updateImagePreview();
+            };
+
+            item.appendChild(thumb);
+            item.appendChild(removeBtn);
+            strip.appendChild(item);
+        });
+    }
+
+    updateOrCreateStreamBubble(type, content) {
+        let bubble = document.getElementById('streamBubble');
+        if (!bubble) {
+            bubble = document.createElement('div');
+            bubble.id = 'streamBubble';
+            bubble.className = 'message system-message stream-bubble';
+            bubble.innerHTML = '<div class="stream-label">💭 Thinking...</div><div class="stream-content"></div>';
+            this.els.chatMessages.appendChild(bubble);
+        }
+        const contentEl = bubble.querySelector('.stream-content');
+        if (contentEl) {
+            contentEl.textContent = content.substring(0, 300) + (content.length > 300 ? '...' : '');
+        }
+        this.scrollToBottom();
     }
 
     renderViz(container, viz) {

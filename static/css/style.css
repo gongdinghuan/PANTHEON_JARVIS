@@ -104,10 +104,14 @@ body {
     overflow: hidden;
     min-height: 0;
     /* Crucial for scrolling in flex column */
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.9);
+    /* High contrast dark background */
+    border: 1px solid rgba(0, 255, 0, 0.3);
+    /* Neon green border */
     border-radius: 4px;
     padding: 0.5rem;
+    box-shadow: inset 0 0 20px rgba(0, 50, 0, 0.2);
+    /* Inner glow */
 }
 
 .logs-header {
@@ -124,21 +128,24 @@ body {
     flex: 1;
     overflow-y: auto;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.7rem;
-    /* Smaller font for sidebar */
-    color: var(--text-dim);
+    font-size: 0.5rem;
+    /* User requested 1/2 size */
+    color: #00ff00;
+    /* Neon Green base */
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
 }
 
 .log-entry {
-    line-height: 1.3;
+    line-height: 1.2;
     word-break: break-all;
+    text-shadow: 0 0 2px rgba(0, 255, 0, 0.3);
 }
 
 .log-entry.info {
-    color: #8fa3bf;
+    color: #00ff00;
+    /* Force Neon Green */
 }
 
 .log-entry.success {
@@ -299,7 +306,8 @@ body {
     border-top: none;
     z-index: 20;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     pointer-events: none;
     /* Let clicks pass through empty space */
 }
@@ -805,28 +813,68 @@ button.danger {
     font-weight: 600;
 }
 
+/* --- Custom Card Style for Markdown (Data Widgets) --- */
+.markdown-content .card {
+    background: rgba(0, 0, 0, 0.2);
+    /* Darker than message bubble */
+    border: 1px solid rgba(0, 243, 255, 0.2);
+    /* Cyan border */
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(5px);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.markdown-content .card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 243, 255, 0.1);
+    border-color: rgba(0, 243, 255, 0.4);
+}
+
+.markdown-content .card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--neon-blue);
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+    font-family: 'Rajdhani', sans-serif;
+}
+
+.markdown-content .card-body {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
 /* --- Mobile Optimization --- */
 @media (max-width: 768px) {
     .app-container {
-        grid-template-columns: 1fr; /* Stack layout, hide sidebar */
+        grid-template-columns: 1fr;
+        /* Stack layout, hide sidebar */
     }
 
     .sidebar {
-        display: none; /* Hide sidebar on mobile for focus */
+        display: none;
+        /* Hide sidebar on mobile for focus */
     }
 
     .message {
-        max-width: 92%; /* Utilize screen width */
+        max-width: 92%;
+        /* Utilize screen width */
         padding: 0.8rem 1rem;
         font-size: 0.95rem;
     }
 
     .chat-viewport {
-        padding: 1rem 1rem 120px 1rem; /* Adjust padding for mobile */
+        padding: 1rem 1rem 120px 1rem;
+        /* Adjust padding for mobile */
     }
 
     .input-area {
-        padding: 0 0.5rem 1rem 0.5rem; /* Tighter padding */
+        padding: 0 0.5rem 1rem 0.5rem;
+        /* Tighter padding */
     }
 
     .input-wrapper {
@@ -834,13 +882,190 @@ button.danger {
         max-width: 100%;
     }
 
-    .send-btn, .voice-btn {
-        width: 36px; /* Larger touch targets */
-        height: 36px;
+    .send-btn,
+    .voice-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    /* Mobile upload button - larger touch target */
+    .upload-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+    }
+
+    /* Preview remove button always visible on touch devices */
+    .preview-remove {
+        opacity: 1 !important;
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
+        line-height: 24px;
+        top: -2px;
+        right: -2px;
+    }
+
+    /* Larger preview thumbnails on mobile */
+    .preview-item {
+        width: 72px;
+        height: 72px;
+    }
+
+    .user-msg-thumb {
+        width: 100px;
+        height: 75px;
     }
 
     /* Prevent text zoom on iOS inputs */
     #messageInput {
-        font-size: 16px; 
+        font-size: 16px;
     }
+}
+
+
+/* ============================================= */
+/* [NEW] Image Upload & Preview                  */
+/* ============================================= */
+
+/* Upload button */
+.upload-btn {
+    background: rgba(0, 102, 204, 0.1);
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    color: var(--neon-cyan);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.upload-btn:hover {
+    background: rgba(0, 243, 255, 0.2);
+    color: var(--neon-blue);
+    box-shadow: 0 0 8px rgba(0, 243, 255, 0.3);
+}
+
+/* Image Preview Strip (above input) */
+.image-preview-strip {
+    pointer-events: auto;
+    display: flex;
+    gap: 8px;
+    padding: 6px 12px;
+    max-width: 800px;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 6px;
+    background: rgba(20, 25, 35, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 12px;
+    border: 1px solid rgba(0, 102, 204, 0.2);
+    scrollbar-width: none;
+}
+
+.image-preview-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.preview-item {
+    position: relative;
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 102, 204, 0.3);
+    animation: slideIn 0.3s ease;
+}
+
+.preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.preview-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.preview-item:hover .preview-remove {
+    opacity: 1;
+}
+
+/* User message image thumbnails */
+.user-images-strip {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.user-msg-thumb {
+    width: 80px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+}
+
+.user-msg-thumb:hover {
+    transform: scale(1.05);
+    border-color: #fff;
+}
+
+/* Drag & Drop overlay */
+.chat-viewport.drag-over {
+    outline: 2px dashed var(--neon-cyan);
+    outline-offset: -8px;
+    background: rgba(0, 243, 255, 0.03);
+}
+
+
+/* ============================================= */
+/* [NEW] Streaming Thought Bubble                */
+/* ============================================= */
+
+.stream-bubble {
+    border-left: 3px solid var(--neon-purple) !important;
+    opacity: 0.85;
+}
+
+.stream-bubble::before {
+    background: var(--neon-purple) !important;
+}
+
+.stream-label {
+    font-size: 0.75rem;
+    color: var(--neon-purple);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.stream-content {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-style: italic;
+    max-height: 100px;
+    overflow: hidden;
 }

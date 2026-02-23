@@ -98,6 +98,30 @@ class LLMConfig:
 
 
 @dataclass
+class VisionConfig:
+    """视觉理解专用模型配置
+    
+    独立于主 LLM，用于图片分析。分析结果会注入到主模型的 Prompt 中。
+    如果未配置，则回退到主 LLM 的 chat_with_vision() 模式。
+    """
+    # 是否启用独立视觉模型 (False = 回退到主 LLM)
+    enabled: bool = field(default_factory=lambda: os.getenv("VISION_ENABLED", "true").lower() == "true")
+    
+    # 视觉模型提供商 (可与主 LLM 不同)
+    provider: str = field(default_factory=lambda: os.getenv("VISION_PROVIDER", "openai"))
+    
+    # 视觉模型 API
+    api_key: str = field(default_factory=lambda: os.getenv("VISION_API_KEY", ""))
+    base_url: str = field(default_factory=lambda: os.getenv("VISION_BASE_URL", ""))
+    model: str = field(default_factory=lambda: os.getenv("VISION_MODEL", "gpt-4o"))
+    
+    # 图片分析参数
+    detail: str = field(default_factory=lambda: os.getenv("VISION_DETAIL", "high"))  # low / high / auto
+    max_tokens: int = field(default_factory=lambda: int(os.getenv("VISION_MAX_TOKENS", "1024")))
+    temperature: float = 0.3  # 低温度，提高描述精确度
+
+
+@dataclass
 class VoiceConfig:
     """语音配置"""
     # Whisper 配置
@@ -392,6 +416,7 @@ class IMConfig:
 class JarvisConfig:
     """JARVIS 总配置"""
     llm: LLMConfig = field(default_factory=LLMConfig)
+    vision: VisionConfig = field(default_factory=VisionConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
